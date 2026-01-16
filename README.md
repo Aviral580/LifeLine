@@ -1,6 +1,6 @@
 # 🛡️ LifeLine: AI-Powered Search & Analytics Platform
 
-LifeLine is a robust **full-stack MERN application** designed for **high-speed information retrieval** with a focus on **emergency response and public safety**. It features a **custom-built N-gram NLP engine** for real-time search suggestions and a comprehensive **Analytics Dashboard** to monitor user behavior and search trends.
+LifeLine is a robust **full-stack MERN application with Machine Learning** designed for **high-speed information retrieval** with a focus on **emergency response and public safety**. It features a **custom-built N-gram NLP engine** for real-time search suggestions and a comprehensive **Analytics Dashboard** to monitor user behavior and search trends.
 
 ---
 
