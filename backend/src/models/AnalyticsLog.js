@@ -1,20 +1,43 @@
+
 import mongoose from 'mongoose';
 
+
+
 const analyticsSchema = mongoose.Schema({
-  sessionId: { type: String, required: true },
+
+  sessionId: { type: String, required: true, index: true },
+
   actionType: { 
+
     type: String, 
-    enum: ['search', 'click_result', 'bounce', 'time_on_page'], 
+
+    enum: ['search', 'click_result', 'bounce', 'time_on_page', 'mode_switch'], 
+
     required: true 
+
   },
+
+  query: { type: String }, // Store what they searched
+
   targetUrl: { type: String },
-  sourceId: { type: String }, // To track specific verified sources
-  duration: { type: Number }, // For time-on-page metrics
+
+  sourceTrustScore: { type: Number }, // Snapshot of trust score at time of click
+
+  timeSpentSeconds: { type: Number, default: 0 },
+
   isEmergencyMode: { type: Boolean, default: false },
-  metadata: { type: Object } // Flexible field for extra data
+
+  deviceType: { type: String, default: 'desktop' }
+
 }, { timestamps: true });
 
-// Index for faster aggregation of CTR
+
+
+// Compound index for fast aggregation of CTR per URL
+
 analyticsSchema.index({ targetUrl: 1, actionType: 1 });
 
+
+
 export default mongoose.model('AnalyticsLog', analyticsSchema);
+
