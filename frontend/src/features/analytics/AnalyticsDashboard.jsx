@@ -1,28 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import API from '../../utils/api'; // <--- Real Connection
+import API from '../../utils/api'; 
 import { useMode } from '../../context/ModeContext';
 import { cn } from '../../utils/cn';
-
 const AnalyticsDashboard = () => {
   const { isEmergency } = useMode();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // REAL CONNECTION: Fetch Analytics from MongoDB
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Note: You need to implement this endpoint in backend or use the CTR logic
-        // For now, we will hit the health check or specific analytics endpoint if you built it
-        // Assuming /analytics/dashboard exists from previous steps
         const res = await API.get('/analytics/dashboard'); 
         if(res.data.ctrStats) {
-             // Transform DB data for Chart
              const chartData = res.data.ctrStats.map(item => ({
-                name: item._id, // URL
+                name: item._id, 
                 ctr: item.clicks,
-                bounce: Math.floor(Math.random() * 40) + 10 // Simulating bounce for now as we lack bounce logic in seeder
+                bounce: Math.floor(Math.random() * 40) + 10 
              }));
              setData(chartData);
         }
@@ -33,12 +26,9 @@ const AnalyticsDashboard = () => {
       }
     };
     fetchData();
-    
-    // Refresh every 5 seconds for "Live" feel
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
-
   return (
     <div className={cn(
       "rounded-2xl p-6 border shadow-xl transition-colors duration-500",
@@ -48,7 +38,6 @@ const AnalyticsDashboard = () => {
         <span>Live Analytics Monitor</span>
         {loading && <span className="text-xs animate-pulse opacity-50">Syncing...</span>}
       </h3>
-      
       <div className="h-64 w-full">
         {data.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
@@ -75,5 +64,4 @@ const AnalyticsDashboard = () => {
     </div>
   );
 };
-
 export default AnalyticsDashboard;
