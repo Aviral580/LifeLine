@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-
 const feedbackSchema = mongoose.Schema({
   targetUrl: { type: String, required: true },
   feedbackType: { 
@@ -8,8 +7,7 @@ const feedbackSchema = mongoose.Schema({
     required: true 
   },
   userComment: { type: String },
-  trustScoreImpact: { type: Number, default: 0 }, // Calculated weight
-  verifiedUser: { type: Boolean, default: false } // Placeholder for Dhairya's Auth
+  trustScoreImpact: { type: Number, default: 0 }, 
+  verifiedUser: { type: Boolean, default: false } 
 }, { timestamps: true });
-
 export default mongoose.model('Feedback', feedbackSchema);
