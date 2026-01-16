@@ -43,7 +43,7 @@ const Home = () => {
               {}
               <div className="p-4 border border-dashed rounded-lg opacity-50 text-center">
                  <p className="text-sm">
-                    ⚠️ Real Search Results unavailable.<br/>
+                    ️ Real Search Results unavailable.<br/>
                     Waiting for <b>Arushi Agrawal</b> to implement <code>newsService.js</code>
                  </p>
               </div>

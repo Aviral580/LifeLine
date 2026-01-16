@@ -12,24 +12,24 @@ class NgramService {
   }
   async initialize() {
     if (fs.existsSync(MODEL_PATH)) {
-      console.log("📂 Loading saved NLP model from disk...");
+      console.log(" Loading saved NLP model from disk...");
       try {
         const savedData = await fs.readJson(MODEL_PATH);
         if (Array.isArray(savedData)) {
             this.trie = new natural.Trie();
             this.trie.addStrings(savedData);
             this.isReady = true;
-            console.log("✅ NLP Model Loaded Successfully");
+            console.log(" NLP Model Loaded Successfully");
         } else {
-             console.log("⚠️ Saved model format unrecognized. Retraining...");
+             console.log("️ Saved model format unrecognized. Retraining...");
              await this.retrainFromDB();
         }
       } catch (err) {
-        console.error("❌ Failed to load saved model:", err.message);
+        console.error(" Failed to load saved model:", err.message);
         await this.retrainFromDB();
       }
     } else {
-      console.log("⚠️ No saved model found. Building from DB...");
+      console.log("️ No saved model found. Building from DB...");
       await this.retrainFromDB();
     }
   }
@@ -41,7 +41,7 @@ class NgramService {
       this.trie.addStrings(phrases);
       this.isReady = true;
       await this.saveModel(phrases); 
-      console.log(`🧠 NLP Model Retrained with ${phrases.length} phrases.`);
+      console.log(` NLP Model Retrained with ${phrases.length} phrases.`);
     } catch (error) {
       console.error("NLP Training Error:", error);
     }
