@@ -13,7 +13,7 @@ const seedAnalytics = async () => {
       { sessionId: 's3', actionType: 'bounce', targetUrl: 'fake-news.com', isEmergencyMode: false },
       { sessionId: 's4', actionType: 'click_result', targetUrl: 'ndma.gov.in', isEmergencyMode: true },
     ]);
-    console.log('🌱 Seed Data Imported');
+    console.log(' Seed Data Imported');
     process.exit();
   } catch (error) {
     console.error(error);

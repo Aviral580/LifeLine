@@ -23,17 +23,17 @@ const generalPhrases = [
 ];
 const seed = async () => {
   await connectDB();
-  console.log("🌱 Clearing old NLP data...");
+  console.log(" Clearing old NLP data...");
   await QueryCorpus.deleteMany({});
-  console.log("🌱 Seeding Emergency Phrases...");
+  console.log(" Seeding Emergency Phrases...");
   for (const phrase of emergencyPhrases) {
     await ngramService.learn(phrase, 'emergency');
   }
-  console.log("🌱 Seeding General Phrases...");
+  console.log(" Seeding General Phrases...");
   for (const phrase of generalPhrases) {
     await ngramService.learn(phrase, 'general');
   }
-  console.log("✅ Database Seeded & NLP Model Trained!");
+  console.log(" Database Seeded & NLP Model Trained!");
   process.exit();
 };
 seed();

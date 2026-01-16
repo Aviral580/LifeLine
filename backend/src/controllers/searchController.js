@@ -2,20 +2,22 @@ import ngramService from '../services/ngramService.js';
 import AnalyticsLog from '../models/AnalyticsLog.js';
 export const getPredictions = (req, res) => {
   const { q } = req.query;
+  console.log(` Predicting for: "${q}"`); 
   const suggestions = ngramService.predict(q);
   res.json({ suggestions });
 };
 export const logSearch = async (req, res) => {
   const { query, sessionId, isEmergencyMode } = req.body;
-  await AnalyticsLog.create({
-    sessionId,
-    actionType: 'search',
-    query,
-    isEmergencyMode
+  console.log(` Logging Search: "${query}" (Emergency: ${isEmergencyMode})`);
+  await AnalyticsLog.create({ 
+      sessionId, 
+      actionType: 'search', 
+      targetUrl: 'search_query', 
+      isEmergencyMode,
+      query 
   });
-  if (query && query.length > 3) {
-    const category = isEmergencyMode ? 'emergency' : 'general';
-    ngramService.learn(query, category).catch(console.error);
+  if(query && query.length > 2) {
+      await ngramService.learn(query, isEmergencyMode ? 'emergency' : 'general');
   }
   res.json({ success: true });
 };
