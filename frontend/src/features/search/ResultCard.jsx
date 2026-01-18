@@ -3,17 +3,19 @@ import { CheckCircle2, AlertOctagon, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useMode } from '../../context/ModeContext';
 import { cn } from '../../utils/cn';
 import { motion } from 'framer-motion';
+
 const ResultCard = ({ title, source, trustScore, summary }) => {
   const { isEmergency } = useMode();
   const isTrusted = trustScore > 80;
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
         "p-6 rounded-2xl border transition-all duration-300 group hover:shadow-lg",
-        isEmergency 
-          ? "bg-slate-900 border-red-900/30 hover:border-red-500/50" 
+        isEmergency
+          ? "bg-slate-900 border-red-900/30 hover:border-red-500/50"
           : "bg-white border-slate-100 hover:border-blue-200"
       )}
     >
@@ -28,21 +30,30 @@ const ResultCard = ({ title, source, trustScore, summary }) => {
               <AlertOctagon className="w-3 h-3" /> Unverified
             </span>
           )}
+
           <span className={cn("text-xs", isEmergency ? "text-red-300" : "text-slate-400")}>
             {source}
           </span>
         </div>
+
         <div className={cn("text-2xl font-bold", isTrusted ? "text-emerald-500" : "text-amber-500")}>
           {trustScore}
         </div>
       </div>
-      <h3 className={cn("text-xl font-bold mb-2 group-hover:underline decoration-2", isEmergency ? "text-red-50 decoration-red-500" : "text-slate-900 decoration-blue-500")}>
+
+      <h3
+        className={cn(
+          "text-xl font-bold mb-2 group-hover:underline decoration-2",
+          isEmergency ? "text-red-50 decoration-red-500" : "text-slate-900 decoration-blue-500"
+        )}
+      >
         {title}
       </h3>
+
       <p className={cn("text-sm leading-relaxed mb-4", isEmergency ? "text-slate-400" : "text-slate-600")}>
         {summary}
       </p>
-      {}
+
       <div className="flex gap-4 pt-4 border-t border-dashed border-white/10">
         <button className="flex items-center gap-2 text-xs font-semibold opacity-50 hover:opacity-100 transition">
           <ThumbsUp className="w-4 h-4" /> Helpful
@@ -54,4 +65,5 @@ const ResultCard = ({ title, source, trustScore, summary }) => {
     </motion.div>
   );
 };
+
 export default ResultCard;
