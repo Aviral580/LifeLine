@@ -1,4 +1,5 @@
 import AnalyticsLog from '../models/AnalyticsLog.js';
+
 export const getDashboardStats = async (req, res) => {
   try {
     const ctrStats = await AnalyticsLog.aggregate([
@@ -7,8 +8,10 @@ export const getDashboardStats = async (req, res) => {
       { $sort: { clicks: -1 } },
       { $limit: 5 }
     ]);
+
     const totalSearches = await AnalyticsLog.countDocuments({ actionType: 'search' });
     const emergencyUsage = await AnalyticsLog.countDocuments({ isEmergencyMode: true });
+
     res.json({
       ctrStats,
       totalSearches,

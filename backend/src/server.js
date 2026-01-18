@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 
 import connectDB from './config/db.js';
 
-// Routes - Updated to match new flat structure
 import apiRoutes from './routes/apiRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import queryRoutes from './routes/queryRoutes.js';
@@ -13,19 +12,15 @@ dotenv.config();
 
 const app = express();
 
-// Middlewares
 app.use(cors());
 app.use(express.json());
 
-// Database
 connectDB();
 
-// Routes
 app.use('/api', apiRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/query', queryRoutes);
 
-// Health check
 app.get('/', (req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -33,7 +28,6 @@ app.get('/', (req, res) => {
   });
 });
 
-// Global error handler (basic)
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
