@@ -55,41 +55,45 @@ class NgramService {
       }
     }
   }
-  async predict(prefix) {
-    if (!this.isReady || !prefix) return [];
-    const searchPrefix = prefix.toLowerCase();
-    const rawMatches = this.trie.findPrefix(searchPrefix);
-    let suggestions = [];
-    if (rawMatches) {
-        suggestions = rawMatches
-            .filter(m => m !== null && m !== undefined) 
-            .map(match => {
-                if (!match.startsWith(searchPrefix)) {
-                    return searchPrefix + match;
-                }
-                return match;
-            });
-    }
-    if (suggestions.length < 5) {
-      try {
-          const fallbacks = await QueryCorpus.find({
-            $or: [
-              { phrase: { $regex: '^' + searchPrefix, $options: 'i' } },
-              { category: 'emergency' }
-            ]
-          })
-          .sort({ frequency: -1 })
-          .limit(10); 
-          const fallbackPhrases = fallbacks.map(f => f.phrase);
-          suggestions = [...new Set([...suggestions, ...fallbackPhrases])];
-      } catch (err) {
-          console.error("Fallback DB Error:", err);
-      }
-    }
-    return suggestions
-      .filter(s => s !== searchPrefix) 
-      .slice(0, 5); 
+async predict(prefix) {
+  if (!this.isReady || !prefix) return [];
+  const searchPrefix = prefix.toLowerCase();
+
+  // 1. Get Trie results (Fast In-memory)
+  const rawMatches = this.trie.findPrefix(searchPrefix);
+  let suggestions = [];
+
+  if (rawMatches) {
+    suggestions = rawMatches
+      .filter(m => m !== null)
+      .map(match => match.startsWith(searchPrefix) ? match : searchPrefix + match);
   }
+
+  // 2. Database Fallback (Strict Mode)
+  // If we have fewer than 5 suggestions, look in DB for words containing the prefix
+  if (suggestions.length < 5) {
+    try {
+      const fallbacks = await QueryCorpus.find({
+        // REMOVED: { category: 'emergency' } <--- This was causing the random results
+        
+        // NEW LOGIC: Only find phrases that contain the search term
+        phrase: { $regex: searchPrefix, $options: 'i' }
+      })
+      .sort({ frequency: -1 }) // Show most popular first
+      .limit(5);
+
+      const fallbackPhrases = fallbacks.map(f => f.phrase);
+      suggestions = [...new Set([...suggestions, ...fallbackPhrases])];
+    } catch (err) {
+      console.error("Fallback DB Error:", err);
+    }
+  }
+
+  // 3. Final Cleanup
+  return suggestions
+    .filter(s => s.toLowerCase().includes(searchPrefix)) // Double check strictness
+    .slice(0, 5);
+}
   async learn(phrase, category = 'general') {
     if (!phrase) return;
     const lowerPhrase = phrase.toLowerCase();
