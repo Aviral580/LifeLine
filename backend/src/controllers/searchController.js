@@ -11,6 +11,11 @@ export const getPredictions = async (req, res) => {
   res.json({ suggestions });
 };
 export const logSearch = async (req, res) => {
+
+  
+const isAutoEmergency = emergencyKeywords.some(key => query.toLowerCase().includes(key));
+
+res.json({ success: true, autoTriggerEmergency: isAutoEmergency });
   const { query, sessionId, isEmergencyMode } = req.body;
   console.log(` Logging Search: "${query}" (Emergency: ${isEmergencyMode})`);
   try {
