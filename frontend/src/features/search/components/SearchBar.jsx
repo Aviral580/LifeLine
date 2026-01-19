@@ -1,1 +1,0 @@
-"// Search UI components (Arushi)" 

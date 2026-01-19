@@ -1,24 +1,59 @@
-import AnalyticsLog from '../models/AnalyticsLog.js';
+import AnalyticsLog from "../models/AnalyticsLog.js";
 
-export const getDashboardStats = async (req, res) => {
+export const logClick = async (req, res) => {
   try {
-    const ctrStats = await AnalyticsLog.aggregate([
-      { $match: { actionType: 'click_result' } },
-      { $group: { _id: '$targetUrl', clicks: { $sum: 1 } } },
-      { $sort: { clicks: -1 } },
-      { $limit: 5 }
-    ]);
+    const { sessionId, query, targetUrl, isEmergencyMode } = req.body;
 
-    const totalSearches = await AnalyticsLog.countDocuments({ actionType: 'search' });
-    const emergencyUsage = await AnalyticsLog.countDocuments({ isEmergencyMode: true });
-
-    res.json({
-      ctrStats,
-      totalSearches,
-      emergencyUsage
+    await AnalyticsLog.create({
+      sessionId,
+      actionType: "click_result",
+      query,
+      targetUrl,
+      isEmergencyMode,
     });
-  } catch (error) {
-    console.error("Analytics Error:", error);
-    res.status(500).json({ message: "Server Error" });
+
+    res.status(200).json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to log click" });
+  }
+};
+
+export const logFeedback = async (req, res) => {
+  try {
+    const { sessionId, query, targetUrl, feedbackType, isEmergencyMode } = req.body;
+
+    const actionType =
+      feedbackType === "helpful" ? "feedback_helpful" : "feedback_fake";
+
+    await AnalyticsLog.create({
+      sessionId,
+      actionType,
+      query,
+      targetUrl,
+      isEmergencyMode,
+    });
+
+    res.status(200).json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to log feedback" });
+  }
+};
+
+export const logEvent = async (req, res) => {
+  try {
+    const { sessionId, actionType, query, targetUrl, timeSpentSeconds, isEmergencyMode } = req.body;
+
+    await AnalyticsLog.create({
+      sessionId,
+      actionType,
+      query,
+      targetUrl,
+      timeSpentSeconds,
+      isEmergencyMode,
+    });
+
+    res.status(200).json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to log event" });
   }
 };

@@ -1,8 +1,10 @@
-import express from 'express';
-import { getDashboardStats } from '../controllers/analyticsController.js';
+import express from "express";
+import { logClick, logFeedback, logEvent } from "../controllers/analyticsController.js";
 
 const router = express.Router();
 
-router.get('/dashboard', getDashboardStats);
+router.post("/click", logClick);
+router.post("/feedback", logFeedback);
+router.post("/log", logEvent);
 
 export default router;

@@ -1,4 +1,5 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
+
 const feedbackSchema = mongoose.Schema({
   targetUrl: { type: String, required: true },
   feedbackType: { 
@@ -10,4 +11,5 @@ const feedbackSchema = mongoose.Schema({
   trustScoreImpact: { type: Number, default: 0 }, 
   verifiedUser: { type: Boolean, default: false } 
 }, { timestamps: true });
-export default mongoose.model('Feedback', feedbackSchema);
+
+export default mongoose.model("Feedback", feedbackSchema);

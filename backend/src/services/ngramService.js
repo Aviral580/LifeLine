@@ -70,20 +70,34 @@ class NgramService {
     const searchPrefix = prefix.toLowerCase();
     const rawMatches = this.trie.findPrefix(searchPrefix);
 
-    // 1) First: take trie matches (prefix-based)
+    // Emergency keywords list
+    const emergencyKeywords = [
+      "heart", "chest", "stroke", "bleed", "vomit", "faint",
+      "breath", "pain", "fire", "gas", "earthquake", "flood",
+      "cyclone", "accident", "injury", "burn", "shock", "seizure",
+      "unconscious", "emergency", "ambulance", "police"
+    ];
+
+    const isEmergencySearch = emergencyKeywords.some(k => searchPrefix.includes(k));
+
+    // 1) Trie matches (prefix-based)
     let suggestions = (rawMatches || [])
       .filter(m => typeof m === 'string' && m.trim().length > 0)
       .map(m => m.trim());
 
-    // 2) If not enough, add DB fallback (prefix + emergency)
+    // 2) Fallback logic
     if (suggestions.length < 5) {
       try {
-        const fallbacks = await QueryCorpus.find({
-          $or: [
-            { phrase: { $regex: '^' + searchPrefix, $options: 'i' } },
-            { category: 'emergency' }
-          ]
-        })
+        const query = isEmergencySearch
+          ? {
+              $or: [
+                { phrase: { $regex: '^' + searchPrefix, $options: 'i' } },
+                { category: 'emergency', phrase: { $regex: searchPrefix, $options: 'i' } }
+              ]
+            }
+          : { phrase: { $regex: '^' + searchPrefix, $options: 'i' } };
+
+        const fallbacks = await QueryCorpus.find(query)
           .sort({ frequency: -1 })
           .limit(10);
 
@@ -94,20 +108,16 @@ class NgramService {
       }
     }
 
-    // 3) Ranking improvement:
-    //    prioritize exact prefix match and shorter phrases
+    // 3) Ranking improvement (prefix + frequency + length)
     suggestions = suggestions
       .filter(s => s !== searchPrefix)
       .sort((a, b) => {
-        // prefer exact prefix match first
         const aStarts = a.startsWith(searchPrefix) ? 1 : 0;
         const bStarts = b.startsWith(searchPrefix) ? 1 : 0;
-        if (aStarts !== bStarts) return bStarts - aStarts;
 
-        // then prefer shorter phrases
+        if (aStarts !== bStarts) return bStarts - aStarts;
         if (a.length !== b.length) return a.length - b.length;
 
-        // finally lexicographic fallback
         return a.localeCompare(b);
       })
       .slice(0, 5);

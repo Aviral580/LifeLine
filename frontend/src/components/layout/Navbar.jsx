@@ -1,7 +1,8 @@
-import React from 'react';
-import { AlertTriangle, ShieldCheck } from 'lucide-react';
-import { useMode } from '../../context/ModeContext';
-import { cn } from '../../utils/cn';
+import React from "react";
+import { Link } from "react-router-dom";
+import { AlertTriangle, ShieldCheck } from "lucide-react";
+import { useMode } from "../../context/ModeContext";
+import { cn } from "../../utils/cn";
 
 const Navbar = () => {
   const { isEmergency, toggleEmergency } = useMode();
@@ -22,6 +23,17 @@ const Navbar = () => {
           ErrorMachine
         </h1>
       </div>
+
+      {/* ✔️ SEARCH LINK */}
+      <Link
+        to="/search"
+        className={cn(
+          "font-semibold px-4 py-2 rounded-full",
+          isEmergency ? "bg-red-600 text-white" : "bg-blue-600 text-white"
+        )}
+      >
+        Search
+      </Link>
 
       <button
         onClick={toggleEmergency}
