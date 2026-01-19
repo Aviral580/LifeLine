@@ -1,11 +1,11 @@
-// backend/src/utils/ranker.js
+import { verifySourceAuthority } from './trustValidator.js';
 
 export const calculateEmergencyScore = (result, emergencyIntent) => {
  
   const relevance = result.relevanceScore || 0.5; 
-
+  const dynamicTrustScore = verifySourceAuthority(result.url);
   
-  const authority = result.sourceTrustScore / 100;
+  const authority = dynamicTrustScore / 100;
 
   
   const publishedDate = new Date(result.publishedAt);
