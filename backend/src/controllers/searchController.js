@@ -1,32 +1,144 @@
+import axios from 'axios';
 import ngramService from '../services/ngramService.js';
 import AnalyticsLog from '../models/AnalyticsLog.js';
+import QueryCorpus from '../models/QueryCorpus.js';
+import { calculateEmergencyScore } from '../utils/ranker.js';
+import { classifyIntent } from '../services/aiService.js'; // Ensure this service exists
+
+// --- HELPER: Get Location via IP ---
+const getUserLocation = async (ip) => {
+  try {
+    const cleanIp = (ip === '::1' || ip === '127.0.0.1' || !ip) ? '' : ip;
+    const res = await axios.get(`http://ip-api.com/json/${cleanIp}`);
+    return res.data.status === 'success' ? `${res.data.city}, ${res.data.regionName}` : "India";
+  } catch (err) {
+    return "India";
+  }
+};
+
+// --- HELPER: Consensus Engine (Cross-Source Agreement) ---
+const calculateConsensus = (currentSnippet, allResults) => {
+  if (!currentSnippet) return 0.5;
+  const words = currentSnippet.toLowerCase().match(/\b(\w{4,})\b/g) || [];
+  let matchingSources = 0;
+
+  allResults.forEach(other => {
+    if (other.snippet && other.snippet !== currentSnippet) {
+      const otherText = other.snippet.toLowerCase();
+      const matches = words.filter(word => otherText.includes(word)).length;
+      if (matches >= 3) matchingSources++;
+    }
+  });
+  return Math.min(0.5 + (matchingSources * 0.1), 1.0);
+};
+
 export const getPredictions = async (req, res) => {
   const { q } = req.query;
   const suggestions = await ngramService.predict(q);
-  if (suggestions.length > 0) {
-      console.log(` SENDING to Frontend: [ ${suggestions.join(', ')} ]`);
-  } else {
-      console.log(`️ SENDING EMPTY LIST (No matches found)`);
-  }
   res.json({ suggestions });
 };
+
 export const logSearch = async (req, res) => {
   const { query, sessionId, isEmergencyMode } = req.body;
-  console.log(` Logging Search: "${query}" (Emergency: ${isEmergencyMode})`);
   try {
+    const aiResponse = await classifyIntent(query);
+    const isAutoEmergency = aiResponse.isEmergency;
+
     await AnalyticsLog.create({ 
         sessionId, 
         actionType: 'search', 
         targetUrl: 'search_query', 
-        isEmergencyMode,
+        isEmergencyMode: isEmergencyMode || isAutoEmergency,
         query 
     });
+
     if(query && query.length > 2) {
-        await ngramService.learn(query, isEmergencyMode ? 'emergency' : 'general');
+        await ngramService.learn(query, (isEmergencyMode || isAutoEmergency) ? 'emergency' : 'general');
     }
-    res.json({ success: true });
+    res.json({ success: true, autoTriggerEmergency: isAutoEmergency, aiReasoning: aiResponse.reason });
   } catch (error) {
-    console.error("Log Error:", error);
     res.status(500).json({ success: false });
+  }
+};
+
+export const executeSearch = async (req, res) => {
+  const { q } = req.query;
+  const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+  try {
+    // A. AI Intent Detection (Gemini Power)
+    const aiAnalysis = await classifyIntent(q);
+    const isEmergency = aiAnalysis.isEmergency;
+
+    console.log(`🧠 AI Mode: ${isEmergency ? 'EMERGENCY' : 'NORMAL'} | Tip: ${aiAnalysis.survivalTip}`);
+
+    // B. Smart Location Awareness
+    const location = await getUserLocation(userIp);
+    const hasExplicitLocation = q.split(' ').length > 1;
+
+    const searchQuery = (isEmergency && !hasExplicitLocation) 
+      ? `${q} in ${location}` 
+      : q;
+
+    // C. Fetch Results
+    const response = await axios.get('https://www.searchapi.io/api/v1/search', {
+      params: { q: searchQuery, api_key: process.env.SERP_API_KEY, engine: 'google', num: 10 }
+    });
+
+    const webResults = response.data.organic_results || [];
+
+    // D. Process & Apply Truth Labels
+    const processedResults = webResults.map((item, index) => {
+      const resultObj = {
+        title: item.title,
+        source: item.source || "Web Result",
+        url: item.link,
+        summary: item.snippet,
+        publishedAt: item.date || new Date().toISOString(),
+        relevanceScore: 1 - (index * 0.05),
+      };
+
+      if (isEmergency) {
+        resultObj.crossSourceAgreement = calculateConsensus(item.snippet, webResults);
+        const score = calculateEmergencyScore(resultObj);
+        resultObj.rankingScore = score;
+        
+        if (score >= 85) {
+          resultObj.verificationStatus = "OFFICIAL";
+          resultObj.trustLevel = "high";
+        } else if (score >= 55) {
+          resultObj.verificationStatus = "VERIFIED NEWS";
+          resultObj.trustLevel = "medium";
+        } else {
+          resultObj.verificationStatus = "UNVERIFIED / RUMOR";
+          resultObj.trustLevel = "low";
+        }
+      } else {
+        resultObj.rankingScore = null;
+        resultObj.verificationStatus = "GENERAL";
+        resultObj.trustLevel = "normal";
+      }
+      return resultObj;
+    });
+
+    if (isEmergency) {
+      processedResults.sort((a, b) => b.rankingScore - a.rankingScore);
+    }
+
+    res.json({
+      query: q,
+      aiAnalysis: {
+        category: aiAnalysis.category,
+        survivalTip: aiAnalysis.survivalTip,
+        intentReason: aiAnalysis.reason
+      },
+      detectedLocation: location,
+      emergencyMode: isEmergency,
+      results: processedResults
+    });
+
+  } catch (error) {
+    console.error("SEARCH ERROR:", error.message);
+    res.status(500).json({ message: "Search failed" });
   }
 };
