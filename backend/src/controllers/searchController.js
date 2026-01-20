@@ -1,10 +1,36 @@
-// backend/src/controllers/searchController.js
-
 import axios from 'axios';
 import ngramService from '../services/ngramService.js';
 import AnalyticsLog from '../models/AnalyticsLog.js';
 import QueryCorpus from '../models/QueryCorpus.js';
 import { calculateEmergencyScore } from '../utils/ranker.js';
+import { classifyIntent } from '../services/aiService.js'; // Ensure this service exists
+
+// --- HELPER: Get Location via IP ---
+const getUserLocation = async (ip) => {
+  try {
+    const cleanIp = (ip === '::1' || ip === '127.0.0.1' || !ip) ? '' : ip;
+    const res = await axios.get(`http://ip-api.com/json/${cleanIp}`);
+    return res.data.status === 'success' ? `${res.data.city}, ${res.data.regionName}` : "India";
+  } catch (err) {
+    return "India";
+  }
+};
+
+// --- HELPER: Consensus Engine (Cross-Source Agreement) ---
+const calculateConsensus = (currentSnippet, allResults) => {
+  if (!currentSnippet) return 0.5;
+  const words = currentSnippet.toLowerCase().match(/\b(\w{4,})\b/g) || [];
+  let matchingSources = 0;
+
+  allResults.forEach(other => {
+    if (other.snippet && other.snippet !== currentSnippet) {
+      const otherText = other.snippet.toLowerCase();
+      const matches = words.filter(word => otherText.includes(word)).length;
+      if (matches >= 3) matchingSources++;
+    }
+  });
+  return Math.min(0.5 + (matchingSources * 0.1), 1.0);
+};
 
 export const getPredictions = async (req, res) => {
   const { q } = req.query;
@@ -15,10 +41,8 @@ export const getPredictions = async (req, res) => {
 export const logSearch = async (req, res) => {
   const { query, sessionId, isEmergencyMode } = req.body;
   try {
-    const emergencyDocs = await QueryCorpus.find({ category: 'emergency' });
-    const emergencyKeywords = emergencyDocs.map(doc => doc.phrase.toLowerCase());
-    const lowerQuery = query.toLowerCase();
-    const isAutoEmergency = emergencyKeywords.some(key => lowerQuery.includes(key));
+    const aiResponse = await classifyIntent(query);
+    const isAutoEmergency = aiResponse.isEmergency;
 
     await AnalyticsLog.create({ 
         sessionId, 
@@ -31,37 +55,39 @@ export const logSearch = async (req, res) => {
     if(query && query.length > 2) {
         await ngramService.learn(query, (isEmergencyMode || isAutoEmergency) ? 'emergency' : 'general');
     }
-    res.json({ success: true, autoTriggerEmergency: isAutoEmergency });
+    res.json({ success: true, autoTriggerEmergency: isAutoEmergency, aiReasoning: aiResponse.reason });
   } catch (error) {
-    console.error("LOGGING ERROR:", error);
     res.status(500).json({ success: false });
   }
 };
 
 export const executeSearch = async (req, res) => {
   const { q } = req.query;
+  const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
   try {
-    // A. Detect Mode
-    const emergencyDocs = await QueryCorpus.find({ category: 'emergency' });
-    const emergencyKeywords = emergencyDocs.map(doc => doc.phrase.toLowerCase());
-    const isEmergency = emergencyKeywords.some(key => q.toLowerCase().includes(key));
+    // A. AI Intent Detection (Gemini Power)
+    const aiAnalysis = await classifyIntent(q);
+    const isEmergency = aiAnalysis.isEmergency;
 
-    console.log(`📡 Fetching real results for: "${q}" | Emergency: ${isEmergency}`);
+    console.log(`🧠 AI Mode: ${isEmergency ? 'EMERGENCY' : 'NORMAL'} | Tip: ${aiAnalysis.survivalTip}`);
 
-    // B. Fetch Real-time results from SearchAPI.io
+    // B. Smart Location Awareness
+    const location = await getUserLocation(userIp);
+    const hasExplicitLocation = q.split(' ').length > 1;
+
+    const searchQuery = (isEmergency && !hasExplicitLocation) 
+      ? `${q} in ${location}` 
+      : q;
+
+    // C. Fetch Results
     const response = await axios.get('https://www.searchapi.io/api/v1/search', {
-      params: {
-        q: q,
-        api_key: process.env.SERP_API_KEY,
-        engine: 'google',
-        num: 10
-      }
+      params: { q: searchQuery, api_key: process.env.SERP_API_KEY, engine: 'google', num: 10 }
     });
 
     const webResults = response.data.organic_results || [];
 
-    // C. Process, Rank, and LABEL
+    // D. Process & Apply Truth Labels
     const processedResults = webResults.map((item, index) => {
       const resultObj = {
         title: item.title,
@@ -69,16 +95,14 @@ export const executeSearch = async (req, res) => {
         url: item.link,
         summary: item.snippet,
         publishedAt: item.date || new Date().toISOString(),
-        relevanceScore: 1 - (index * 0.05), 
-        crossSourceAgreement: 0.8,
-        sourceTrustScore: 50 
+        relevanceScore: 1 - (index * 0.05),
       };
 
       if (isEmergency) {
+        resultObj.crossSourceAgreement = calculateConsensus(item.snippet, webResults);
         const score = calculateEmergencyScore(resultObj);
         resultObj.rankingScore = score;
         
-        // --- TRUTH & MISINFORMATION LABELING ---
         if (score >= 85) {
           resultObj.verificationStatus = "OFFICIAL";
           resultObj.trustLevel = "high";
@@ -94,23 +118,27 @@ export const executeSearch = async (req, res) => {
         resultObj.verificationStatus = "GENERAL";
         resultObj.trustLevel = "normal";
       }
-
       return resultObj;
     });
 
-    // D. Re-sort by Truth Score if in Emergency
     if (isEmergency) {
       processedResults.sort((a, b) => b.rankingScore - a.rankingScore);
     }
 
     res.json({
       query: q,
+      aiAnalysis: {
+        category: aiAnalysis.category,
+        survivalTip: aiAnalysis.survivalTip,
+        intentReason: aiAnalysis.reason
+      },
+      detectedLocation: location,
       emergencyMode: isEmergency,
       results: processedResults
     });
 
   } catch (error) {
-    console.error("SEARCH ERROR:", error.response?.data || error.message);
-    res.status(500).json({ message: "Search Engine failed to fetch live results" });
+    console.error("SEARCH ERROR:", error.message);
+    res.status(500).json({ message: "Search failed" });
   }
 };

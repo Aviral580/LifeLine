@@ -1,16 +1,15 @@
-import { verifySourceAuthority } from './trustValidator.js';
-
 // backend/src/utils/ranker.js
+import { verifySourceAuthority } from './trustValidator.js';
 
 export const calculateEmergencyScore = (result) => {
   const relevance = result.relevanceScore || 0.5; 
   const dynamicTrustScore = verifySourceAuthority(result.url);
   const authority = dynamicTrustScore / 100;
 
-  // --- NEW DATE PARSING LOGIC ---
-  let freshness = 0.1; // Default
-  const pubDateRaw = result.publishedAt;
-  let hoursOld = 48; // Default to old
+  // --- DATE PARSING LOGIC ---
+  let freshness = 0.1; 
+  const pubDateRaw = result.publishedAt || "";
+  let hoursOld = 48;
 
   if (pubDateRaw.includes('hour')) {
     hoursOld = parseInt(pubDateRaw) || 1;
@@ -29,8 +28,8 @@ export const calculateEmergencyScore = (result) => {
   else if (hoursOld <= 6) freshness = 0.8; 
   else if (hoursOld <= 24) freshness = 0.5;
   else freshness = 0.1;
-  // ------------------------------
 
+  // Now uses the dynamic agreement calculated by the consensus engine
   const agreement = result.crossSourceAgreement || 0.5;
 
   const finalScore = (
