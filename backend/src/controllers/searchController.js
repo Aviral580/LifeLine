@@ -1,3 +1,5 @@
+// backend/src/controllers/searchController.js
+
 import axios from 'axios';
 import ngramService from '../services/ngramService.js';
 import AnalyticsLog from '../models/AnalyticsLog.js';
@@ -12,12 +14,10 @@ export const getPredictions = async (req, res) => {
 
 export const logSearch = async (req, res) => {
   const { query, sessionId, isEmergencyMode } = req.body;
-
   try {
     const emergencyDocs = await QueryCorpus.find({ category: 'emergency' });
     const emergencyKeywords = emergencyDocs.map(doc => doc.phrase.toLowerCase());
     const lowerQuery = query.toLowerCase();
-    
     const isAutoEmergency = emergencyKeywords.some(key => lowerQuery.includes(key));
 
     await AnalyticsLog.create({ 
@@ -31,31 +31,25 @@ export const logSearch = async (req, res) => {
     if(query && query.length > 2) {
         await ngramService.learn(query, (isEmergencyMode || isAutoEmergency) ? 'emergency' : 'general');
     }
-
-    res.json({ 
-      success: true, 
-      autoTriggerEmergency: isAutoEmergency 
-    });
-
+    res.json({ success: true, autoTriggerEmergency: isAutoEmergency });
   } catch (error) {
     console.error("LOGGING ERROR:", error);
     res.status(500).json({ success: false });
   }
 };
 
-// UPDATED: Now fetches real results from SerpApi
 export const executeSearch = async (req, res) => {
   const { q } = req.query;
 
   try {
-    // 1. Determine Mode Automatically
+    // A. Detect Mode
     const emergencyDocs = await QueryCorpus.find({ category: 'emergency' });
     const emergencyKeywords = emergencyDocs.map(doc => doc.phrase.toLowerCase());
     const isEmergency = emergencyKeywords.some(key => q.toLowerCase().includes(key));
 
     console.log(`📡 Fetching real results for: "${q}" | Emergency: ${isEmergency}`);
 
-    // 2. Fetch Real-time results from SerpApi (Google Engine)
+    // B. Fetch Real-time results from SearchAPI.io
     const response = await axios.get('https://www.searchapi.io/api/v1/search', {
       params: {
         q: q,
@@ -65,33 +59,46 @@ export const executeSearch = async (req, res) => {
       }
     });
 
-    const googleResults = response.data.organic_results || [];
+    const webResults = response.data.organic_results || [];
 
-    // 3. Process and Rank Results
-    const processedResults = googleResults.map((item, index) => {
+    // C. Process, Rank, and LABEL
+    const processedResults = webResults.map((item, index) => {
       const resultObj = {
         title: item.title,
         source: item.source || "Web Result",
         url: item.link,
         summary: item.snippet,
         publishedAt: item.date || new Date().toISOString(),
-        // Map relevance based on original Google rank
         relevanceScore: 1 - (index * 0.05), 
-        crossSourceAgreement: 0.8, // Simulated for base scoring
-        sourceTrustScore: 50 // Base score (ranker.js will adjust this via trustValidator)
+        crossSourceAgreement: 0.8,
+        sourceTrustScore: 50 
       };
 
-      // 4. Apply Aviral's Weighted Ranking Formula (0.4/0.3/0.2/0.1)
       if (isEmergency) {
-        resultObj.rankingScore = calculateEmergencyScore(resultObj);
+        const score = calculateEmergencyScore(resultObj);
+        resultObj.rankingScore = score;
+        
+        // --- TRUTH & MISINFORMATION LABELING ---
+        if (score >= 85) {
+          resultObj.verificationStatus = "OFFICIAL";
+          resultObj.trustLevel = "high";
+        } else if (score >= 55) {
+          resultObj.verificationStatus = "VERIFIED NEWS";
+          resultObj.trustLevel = "medium";
+        } else {
+          resultObj.verificationStatus = "UNVERIFIED / RUMOR";
+          resultObj.trustLevel = "low";
+        }
       } else {
         resultObj.rankingScore = null;
+        resultObj.verificationStatus = "GENERAL";
+        resultObj.trustLevel = "normal";
       }
 
       return resultObj;
     });
 
-    // 5. If Emergency, re-sort based on our custom truth-score
+    // D. Re-sort by Truth Score if in Emergency
     if (isEmergency) {
       processedResults.sort((a, b) => b.rankingScore - a.rankingScore);
     }
@@ -103,7 +110,7 @@ export const executeSearch = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("SERP API ERROR:", error.response?.data || error.message);
+    console.error("SEARCH ERROR:", error.response?.data || error.message);
     res.status(500).json({ message: "Search Engine failed to fetch live results" });
   }
 };
