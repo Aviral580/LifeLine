@@ -1,5 +1,6 @@
-import axios from 'axios';
-import ngramService from '../services/ngramService.js';
+import Page from '../models/Page.js';
+import { processQuery } from '../utils/queryProcessor.js';
+import { calculateBM25 } from '../services/bm25.js';
 import AnalyticsLog from '../models/AnalyticsLog.js';
 import QueryCorpus from '../models/QueryCorpus.js';
 import { calculateEmergencyScore } from '../utils/ranker.js';
@@ -99,8 +100,7 @@ export const logSearch = async (req, res) => {
     await AnalyticsLog.create({ 
         sessionId, 
         actionType: 'search', 
-        targetUrl: 'search_query', 
-        isEmergencyMode: isEmergencyMode || isAutoEmergency,
+        isEmergencyMode: isEmergencyMode,
         query 
     });
     if(query && query.length > 2) {
@@ -162,17 +162,17 @@ export const executeSearch = async (req, res) => {
     }
     res.json({
       query: q,
-      aiAnalysis: {
-        category: aiAnalysis.category,
-        survivalTip: aiAnalysis.survivalTip,
-        intentReason: aiAnalysis.reason
-      },
-      detectedLocation: location,
-      emergencyMode: isEmergency,
-      results: processedResults
+      emergencyMode: aiAnalysis.isEmergency,
+      aiTip: aiAnalysis.survivalTip,
+      results: finalResults,
+      meta: {
+        tokens: tokens,
+        coverage: `${(coverageRatio * 100).toFixed(0)}%`,
+        engine: "LifeLine Hybrid v1.2"
+      }
     });
   } catch (error) {
-    console.error("SEARCH ERROR:", error.message);
-    res.status(500).json({ message: "Search failed" });
+    console.error("Search Error:", error.message);
+    res.status(500).json({ message: "Internal Error" });
   }
 };
