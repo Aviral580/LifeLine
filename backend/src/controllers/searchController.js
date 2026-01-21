@@ -3,9 +3,8 @@ import ngramService from '../services/ngramService.js';
 import AnalyticsLog from '../models/AnalyticsLog.js';
 import QueryCorpus from '../models/QueryCorpus.js';
 import { calculateEmergencyScore } from '../utils/ranker.js';
-import { classifyIntent } from '../services/aiService.js'; // Ensure this service exists
+import { classifyIntent } from '../services/aiService.js'; 
 
-// --- HELPER: Get Location via IP ---
 const getUserLocation = async (ip) => {
   try {
     const cleanIp = (ip === '::1' || ip === '127.0.0.1' || !ip) ? '' : ip;
@@ -16,7 +15,6 @@ const getUserLocation = async (ip) => {
   }
 };
 
-// --- HELPER: Consensus Engine (Cross-Source Agreement) ---
 const calculateConsensus = (currentSnippet, allResults) => {
   if (!currentSnippet) return 0.5;
   const words = currentSnippet.toLowerCase().match(/\b(\w{4,})\b/g) || [];
@@ -66,13 +64,13 @@ export const executeSearch = async (req, res) => {
   const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
   try {
-    // A. AI Intent Detection (Gemini Power)
+    
     const aiAnalysis = await classifyIntent(q);
     const isEmergency = aiAnalysis.isEmergency;
 
     console.log(`🧠 AI Mode: ${isEmergency ? 'EMERGENCY' : 'NORMAL'} | Tip: ${aiAnalysis.survivalTip}`);
 
-    // B. Smart Location Awareness
+   
     const location = await getUserLocation(userIp);
     const hasExplicitLocation = q.split(' ').length > 1;
 
@@ -80,14 +78,12 @@ export const executeSearch = async (req, res) => {
       ? `${q} in ${location}` 
       : q;
 
-    // C. Fetch Results
     const response = await axios.get('https://www.searchapi.io/api/v1/search', {
       params: { q: searchQuery, api_key: process.env.SERP_API_KEY, engine: 'google', num: 10 }
     });
 
     const webResults = response.data.organic_results || [];
 
-    // D. Process & Apply Truth Labels
     const processedResults = webResults.map((item, index) => {
       const resultObj = {
         title: item.title,

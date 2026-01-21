@@ -4,11 +4,9 @@ import QueryCorpus from '../models/QueryCorpus.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Standard way to get __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// This moves up THREE levels: utils -> src -> backend -> root
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const emergencyKeywords = [
@@ -32,14 +30,13 @@ const seedDB = async () => {
       frequency: 100
     }));
 
-    // Clean and insert
     await QueryCorpus.deleteMany({ category: 'emergency' });
     await QueryCorpus.insertMany(seeds);
 
-    console.log("✅ Database Seeded Successfully with Emergency Keywords!");
+    console.log("Database Seeded Successfully with Emergency Keywords!");
     process.exit();
   } catch (err) {
-    console.error("❌ Seed Error:", err.message);
+    console.error(" Seed Error:", err.message);
     process.exit(1);
   }
 };

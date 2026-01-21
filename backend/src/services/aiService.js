@@ -27,7 +27,6 @@ export const classifyIntent = async (query) => {
     const response = await result.response;
     const text = response.text();
     
-    // Clean potential markdown and parse JSON
     return JSON.parse(text.replace(/```json|```/g, ""));
   } catch (error) {
     console.error("Gemini AI Error:", error);
