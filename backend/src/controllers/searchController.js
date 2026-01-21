@@ -3,25 +3,71 @@ import ngramService from '../services/ngramService.js';
 import AnalyticsLog from '../models/AnalyticsLog.js';
 import QueryCorpus from '../models/QueryCorpus.js';
 import { calculateEmergencyScore } from '../utils/ranker.js';
-import { classifyIntent } from '../services/aiService.js'; // Ensure this service exists
-
-// --- HELPER: Get Location via IP ---
+import { classifyIntent } from '../services/aiService.js'; 
+export const predictSearch = async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || typeof q !== 'string') return res.json({ suggestions: [] });
+    const suggestions = await ngramService.predict(q);
+    return res.json({ success: true, suggestions: suggestions || [] });
+  } catch (error) {
+    console.error("Prediction Error:", error);
+    return res.status(500).json({ success: false, suggestions: [] });
+  }
+};
+export const performSearch = async (req, res) => {
+  try {
+    const { q, mode } = req.query; 
+    if (!q || typeof q !== 'string') {
+      return res.status(400).json({ success: false, message: "Query is required" });
+    }
+    const cleanQuery = q.toLowerCase().trim();
+    const learnedPhrase = await QueryCorpus.findOneAndUpdate(
+      { phrase: cleanQuery }, 
+      { 
+        $inc: { frequency: 1 }, 
+        $set: { 
+          lastSearched: new Date(),
+          mode: mode === 'emergency' ? 'emergency' : 'normal' 
+        }
+      },
+      { 
+        upsert: true, 
+        new: true,    
+        setDefaultsOnInsert: true 
+      }
+    );
+    console.log(`🧠 Learned: "${cleanQuery}" (Freq: ${learnedPhrase.frequency})`);
+    ngramService.addPhrase(cleanQuery);
+    return res.json({ 
+      success: true, 
+      message: "Search processed and learned",
+      data: {
+        query: cleanQuery,
+        stats: {
+            frequency: learnedPhrase.frequency,
+            isNew: learnedPhrase.frequency === 1
+        }
+      }
+    });
+  } catch (error) {
+    console.error("❌ Search Error:", error);
+    return res.status(500).json({ success: false, message: "Server Error" });
+  }
+};
 const getUserLocation = async (ip) => {
   try {
     const cleanIp = (ip === '::1' || ip === '127.0.0.1' || !ip) ? '' : ip;
-    const res = await axios.get(`http://ip-api.com/json/${cleanIp}`);
+    const res = await axios.get(`http:
     return res.data.status === 'success' ? `${res.data.city}, ${res.data.regionName}` : "India";
   } catch (err) {
     return "India";
   }
 };
-
-// --- HELPER: Consensus Engine (Cross-Source Agreement) ---
 const calculateConsensus = (currentSnippet, allResults) => {
   if (!currentSnippet) return 0.5;
   const words = currentSnippet.toLowerCase().match(/\b(\w{4,})\b/g) || [];
   let matchingSources = 0;
-
   allResults.forEach(other => {
     if (other.snippet && other.snippet !== currentSnippet) {
       const otherText = other.snippet.toLowerCase();
@@ -31,19 +77,16 @@ const calculateConsensus = (currentSnippet, allResults) => {
   });
   return Math.min(0.5 + (matchingSources * 0.1), 1.0);
 };
-
 export const getPredictions = async (req, res) => {
   const { q } = req.query;
   const suggestions = await ngramService.predict(q);
   res.json({ suggestions });
 };
-
 export const logSearch = async (req, res) => {
   const { query, sessionId, isEmergencyMode } = req.body;
   try {
     const aiResponse = await classifyIntent(query);
     const isAutoEmergency = aiResponse.isEmergency;
-
     await AnalyticsLog.create({ 
         sessionId, 
         actionType: 'search', 
@@ -51,7 +94,6 @@ export const logSearch = async (req, res) => {
         isEmergencyMode: isEmergencyMode || isAutoEmergency,
         query 
     });
-
     if(query && query.length > 2) {
         await ngramService.learn(query, (isEmergencyMode || isAutoEmergency) ? 'emergency' : 'general');
     }
@@ -60,34 +102,22 @@ export const logSearch = async (req, res) => {
     res.status(500).json({ success: false });
   }
 };
-
 export const executeSearch = async (req, res) => {
   const { q } = req.query;
   const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-
   try {
-    // A. AI Intent Detection (Gemini Power)
     const aiAnalysis = await classifyIntent(q);
     const isEmergency = aiAnalysis.isEmergency;
-
     console.log(`🧠 AI Mode: ${isEmergency ? 'EMERGENCY' : 'NORMAL'} | Tip: ${aiAnalysis.survivalTip}`);
-
-    // B. Smart Location Awareness
     const location = await getUserLocation(userIp);
     const hasExplicitLocation = q.split(' ').length > 1;
-
     const searchQuery = (isEmergency && !hasExplicitLocation) 
       ? `${q} in ${location}` 
       : q;
-
-    // C. Fetch Results
     const response = await axios.get('https://www.searchapi.io/api/v1/search', {
       params: { q: searchQuery, api_key: process.env.SERP_API_KEY, engine: 'google', num: 10 }
     });
-
     const webResults = response.data.organic_results || [];
-
-    // D. Process & Apply Truth Labels
     const processedResults = webResults.map((item, index) => {
       const resultObj = {
         title: item.title,
@@ -97,12 +127,10 @@ export const executeSearch = async (req, res) => {
         publishedAt: item.date || new Date().toISOString(),
         relevanceScore: 1 - (index * 0.05),
       };
-
       if (isEmergency) {
         resultObj.crossSourceAgreement = calculateConsensus(item.snippet, webResults);
         const score = calculateEmergencyScore(resultObj);
         resultObj.rankingScore = score;
-        
         if (score >= 85) {
           resultObj.verificationStatus = "OFFICIAL";
           resultObj.trustLevel = "high";
@@ -120,11 +148,9 @@ export const executeSearch = async (req, res) => {
       }
       return resultObj;
     });
-
     if (isEmergency) {
       processedResults.sort((a, b) => b.rankingScore - a.rankingScore);
     }
-
     res.json({
       query: q,
       aiAnalysis: {
@@ -136,7 +162,6 @@ export const executeSearch = async (req, res) => {
       emergencyMode: isEmergency,
       results: processedResults
     });
-
   } catch (error) {
     console.error("SEARCH ERROR:", error.message);
     res.status(500).json({ message: "Search failed" });

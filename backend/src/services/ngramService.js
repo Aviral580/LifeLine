@@ -3,158 +3,90 @@ import fs from 'fs-extra';
 import path from 'path';
 import QueryCorpus from '../models/QueryCorpus.js';
 import { fileURLToPath } from 'url';
-
-// Fix for __dirname in ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// Correct Path: Go up from 'services' to 'backend', then into 'data'
 const MODEL_PATH = path.resolve(__dirname, '../../data', 'ngram_model.json');
-
 class NgramService {
   constructor() {
     this.trie = new natural.Trie();
     this.isReady = false;
-    // We keep a local copy of words to avoid querying DB constantly
-    this.cachedPhrases = []; 
-    
-    // Ensure data directory exists
-    fs.ensureDirSync(path.dirname(MODEL_PATH));
-    
-    // Don't await in constructor, call init separately
+    this.processedSet = new Set(); 
     this.initialize();
   }
-
   async initialize() {
     console.log("🔄 Initializing NLP Service...");
-
-    // STRATEGY CHANGE: Always try to load from DB first (The Source of Truth)
-    // This ensures that when you reload, you get the latest searches.
     try {
-      const count = await QueryCorpus.countDocuments();
-      
-      if (count > 0) {
-        console.log("📂 Database is populated. Syncing from MongoDB...");
-        await this.retrainFromDB();
+      const topPhrases = await QueryCorpus.find({})
+        .sort({ frequency: -1 })
+        .limit(10000)
+        .select('phrase');
+      if (topPhrases.length > 0) {
+        const phrases = topPhrases.map(p => p.phrase);
+        this.trie = new natural.Trie();
+        this.trie.addStrings(phrases);
+        phrases.forEach(p => this.processedSet.add(p));
+        this.isReady = true;
+        console.log(`✅ NLP Ready: Loaded top ${phrases.length} words.`);
       } else {
-        console.log("⚠️ Database empty. Attempting to load from backup file...");
-        await this.loadFromFile();
+        console.log("⚠️ DB Empty. Waiting for searches...");
+        this.isReady = true;
       }
     } catch (err) {
-      console.error("❌ DB Connection Failed during init. Using Backup File.", err);
-      await this.loadFromFile();
+      console.error("❌ NLP Init Failed:", err.message);
+      this.isReady = true; 
     }
   }
-
-  // Helper: Load from JSON file (Only used if DB fails)
-  async loadFromFile() {
-    if (fs.existsSync(MODEL_PATH)) {
-      try {
-        const savedData = await fs.readJson(MODEL_PATH);
-        if (Array.isArray(savedData)) {
-          this.trie = new natural.Trie();
-          this.trie.addStrings(savedData);
-          this.cachedPhrases = savedData; // Sync Cache
-          this.isReady = true;
-          console.log("✅ NLP Model Loaded from Disk Backup.");
-        }
-      } catch (err) {
-        console.error("❌ File Load Error:", err);
-      }
+  addPhrase(phrase) {
+    if (!phrase || typeof phrase !== 'string') return;
+    const cleanPhrase = phrase.toLowerCase().trim();
+    if (!this.processedSet.has(cleanPhrase)) {
+        this.trie.addString(cleanPhrase);
+        this.processedSet.add(cleanPhrase);
     }
   }
-
-  async retrainFromDB() {
-    try {
-      // 1. Fetch ALL phrases from MongoDB
-      const docs = await QueryCorpus.find({});
-      const phrases = docs.map(d => d.phrase.toLowerCase());
-
-      // 2. Rebuild the Trie
-      this.trie = new natural.Trie();
-      this.trie.addStrings(phrases);
-      
-      // 3. Update Cache & File
-      this.cachedPhrases = phrases;
-      this.isReady = true;
-
-      // 4. Save to Disk immediately (So file is always fresh on reload)
-      await this.saveModel(phrases);
-      
-      console.log(`✅ NLP Model Synced: ${phrases.length} phrases loaded.`);
-    } catch (error) {
-      console.error("❌ NLP Retraining Error:", error);
-    }
-  }
-
-  async saveModel(phrases) {
-    if (phrases && phrases.length > 0) {
-      try {
-        await fs.writeJson(MODEL_PATH, phrases);
-        // console.log("💾 Model saved to disk."); // Uncomment for debugging
-      } catch (err) {
-        console.error("❌ Failed to save model:", err);
-      }
-    }
-  }
-
   async predict(prefix) {
     if (!this.isReady || !prefix) return [];
-    const searchPrefix = prefix.toLowerCase();
-
-    // 1. Fast Trie Lookup
-    const rawMatches = this.trie.findPrefix(searchPrefix);
+    const searchPrefix = prefix.toLowerCase().trim();
+    if (!searchPrefix) return [];
     let suggestions = [];
-
-    if (rawMatches) {
-      suggestions = rawMatches
-        .filter(m => m !== null)
-        .map(match => match.startsWith(searchPrefix) ? match : searchPrefix + match);
+    try {
+      const rawMatches = this.trie.findPrefix(searchPrefix);
+      if (rawMatches) {
+        suggestions = rawMatches
+          .filter(m => m !== null)
+          .map(match => {
+            const candidateA = searchPrefix + match;
+            const candidateB = match;
+            if (this.processedSet.has(candidateB)) return candidateB;
+            return candidateA; 
+          })
+          .filter(word => word.startsWith(searchPrefix))
+          .slice(0, 5);
+      }
+    } catch (e) {
+      console.warn("Trie Lookup Error:", e.message);
     }
-
-    // 2. DB Fallback (Strict)
     if (suggestions.length < 5) {
       try {
-        const fallbacks = await QueryCorpus.find({
-            phrase: { $regex: searchPrefix, $options: 'i' }
+        const dbFallback = await QueryCorpus.find({
+          phrase: { $regex: `^${searchPrefix}`, $options: 'i' } 
         })
         .sort({ frequency: -1 })
         .limit(5);
-
-        const fallbackPhrases = fallbacks.map(f => f.phrase);
-        suggestions = [...new Set([...suggestions, ...fallbackPhrases])];
+        const dbPhrases = dbFallback.map(d => d.phrase);
+        suggestions = [...new Set([...suggestions, ...dbPhrases])];
       } catch (err) {
-        console.error("Fallback Error:", err);
+        console.error("DB Lookup Error:", err.message);
       }
     }
-
-    return suggestions
-      .filter(s => s.toLowerCase().includes(searchPrefix))
-      .slice(0, 5);
-  }
-
-  async learn(phrase, category = 'general') {
-    if (!phrase) return;
-    const lowerPhrase = phrase.toLowerCase();
-    
-    // 1. Add to Trie (Memory)
-    // Only add if it's not already there to prevent duplicates in RAM
-    if (!this.cachedPhrases.includes(lowerPhrase)) {
-        this.trie.addString(lowerPhrase);
-        this.cachedPhrases.push(lowerPhrase);
-        
-        // 2. THE FIX: Update the file immediately!
-        // This ensures if you crash/reload right now, the file has the new word.
-        this.saveModel(this.cachedPhrases);
+    if (suggestions.length > 0) {
+        const bestMatch = await QueryCorpus.findOne({ phrase: suggestions[0] });
+        if (bestMatch && bestMatch.nextWordSuggestions && bestMatch.nextWordSuggestions.length > 0) {
+            const nextWords = bestMatch.nextWordSuggestions.map(w => `${suggestions[0]} ${w}`);
+            suggestions.push(...nextWords);
+        }
     }
-
-    // 3. Update Database (Permanent Storage)
-    await QueryCorpus.findOneAndUpdate(
-      { phrase: lowerPhrase },
-      { $inc: { frequency: 1 }, category, lastSearched: new Date() },
-      { upsert: true, new: true }
-    );
+    return suggestions.slice(0, 7); 
   }
 }
-
 export default new NgramService();

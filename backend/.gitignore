@@ -4,3 +4,4 @@ data
 ./data
 backend/data
 .env
+./env
