@@ -57,10 +57,19 @@ export const performSearch = async (req, res) => {
 };
 const getUserLocation = async (ip) => {
   try {
+    // Set IP to empty string if localhost or undefined (API will detect server IP)
     const cleanIp = (ip === '::1' || ip === '127.0.0.1' || !ip) ? '' : ip;
-    const res = await axios.get(`http:
-    return res.data.status === 'success' ? `${res.data.city}, ${res.data.regionName}` : "India";
+
+    // Fix: Completed the URL and closed the backticks properly
+    // Assuming 'ip-api.com' based on the response fields (city, regionName)
+    const res = await axios.get(`http://ip-api.com/json/${cleanIp}`);
+
+    return res.data.status === 'success' 
+      ? `${res.data.city}, ${res.data.regionName}` 
+      : "India";
+      
   } catch (err) {
+    console.error("Location fetch failed:", err.message); // Optional: log the error
     return "India";
   }
 };
