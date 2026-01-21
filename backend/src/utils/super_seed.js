@@ -39,5 +39,4 @@ const seedDB = async () => {
     process.exit(1);
   }
 };
-
 seedMasterSync();

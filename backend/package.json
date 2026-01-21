@@ -3,13 +3,15 @@
   "version": "1.0.0",
   "description": "Backend for Analytics, Feedback Loops, and N-gram Prediction",
   "main": "src/server.js",
-  "type": "module",
+   "type": "module",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed": "node src/utils/seedData.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "connect-mongo": "^6.0.0",
     "@google/generative-ai": "^0.24.1",
     "axios": "^1.13.2",
     "cheerio": "^1.1.0",
@@ -17,11 +19,15 @@
     "csv-parse": "^6.1.0",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
+    "express-session": "^1.18.2",
     "fs-extra": "^11.3.3",
     "helmet": "^7.0.0",
     "mongoose": "^7.8.8",
     "morgan": "^1.10.0",
-    "natural": "^6.12.0"
+    "natural": "^6.12.0",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
+    "passport-local": "^1.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
