@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import QueryCorpus from '../models/QueryCorpus.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -41,4 +40,4 @@ const seedDB = async () => {
   }
 };
 
-seedDB();
+seedMasterSync();

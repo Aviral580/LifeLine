@@ -1,12 +1,31 @@
 import mongoose from 'mongoose';
-const queryCorpusSchema = mongoose.Schema({
-  phrase: { type: String, required: true, unique: true },
+
+const queryCorpusSchema = new mongoose.Schema({
+  phrase: { 
+    type: String, 
+    required: true, 
+    unique: true,
+    lowercase: true,
+    trim: true
+  },
+  frequency: { 
+    type: Number, 
+    default: 1 
+  },
   category: { 
     type: String, 
-    enum: ['emergency', 'news', 'general'], 
     default: 'general' 
   },
-  frequency: { type: Number, default: 1 }, 
-  lastSearched: { type: Date, default: Date.now }
+  mode: {
+    type: String,
+    enum: ['emergency', 'normal'],
+    default: 'normal'
+  },
+  lastSearched: { 
+    type: Date, 
+    default: Date.now 
+  }
 });
-export default mongoose.model('QueryCorpus', queryCorpusSchema);
+
+const QueryCorpus = mongoose.model('QueryCorpus', queryCorpusSchema);
+export default QueryCorpus;
