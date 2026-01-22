@@ -162,13 +162,13 @@ export const executeSearch = async (req, res) => {
     }
     res.json({
       query: q,
-      emergencyMode: aiAnalysis.isEmergency,
+      emergencyMode: isEmergency,
       aiTip: aiAnalysis.survivalTip,
-      results: finalResults,
+      results: finalResults.slice(0, 10),
       meta: {
         tokens: tokens,
         coverage: `${(coverageRatio * 100).toFixed(0)}%`,
-        engine: "LifeLine Hybrid v1.2"
+        engine: "LifeLine Hybrid v1.3 (IR Model)"
       }
     });
   } catch (error) {
