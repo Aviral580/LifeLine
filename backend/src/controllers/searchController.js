@@ -93,10 +93,28 @@ export const executeSearch = async (req, res) => {
 
         finalResults.sort((a, b) => b.score - a.score);
 
+        // --- NEW LOGGING ADDED HERE ---
+        await AnalyticsLog.create({
+            actionType: 'search',
+            query: q,
+            isEmergencyMode: isEmergency,
+            sessionId: req.query.sid || 'anonymous',
+            metadata: {
+                source: 'web_search',
+                userAgent: req.headers['user-agent']
+            }
+        });
+
         // Update N-Gram
         await QueryCorpus.findOneAndUpdate(
             { phrase: q.toLowerCase().trim() },
-            { $inc: { frequency: 1 }, $set: { lastSearched: new Date() } },
+            { 
+                $inc: { frequency: 1 }, 
+                $set: { 
+                    lastSearched: new Date(),
+                    category: isEmergency ? 'emergency' : 'normal'
+                } 
+            },
             { upsert: true }
         );
 
