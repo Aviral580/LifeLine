@@ -4,8 +4,9 @@ dotenv.config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "INVALID_KEY");
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
 
-// Local Fallback Brain: Used when API fails or for speed
+// Local Fallback Brain
 const LOCAL_EMERGENCY_KEYWORDS = [
   "earthquake", "flood", "fire", "tsunami", "cyclone", "storm", 
   "hurricane", "tornado", "gas leak", "explosion", "terrorist", 
@@ -17,7 +18,6 @@ const LOCAL_EMERGENCY_KEYWORDS = [
 export const classifyIntent = async (query) => {
   const cleanQuery = query.toLowerCase();
 
-  // 1. Try Google Gemini AI First
   try {
     if (!process.env.GEMINI_API_KEY) throw new Error("No API Key");
 
@@ -34,29 +34,26 @@ export const classifyIntent = async (query) => {
     const result = await model.generateContent(prompt);
     const response = await result.response;
     let text = response.text();
-    // Clean up markdown code blocks if Gemini sends them
     text = text.replace(/```json|```/g, "").trim();
     
     return JSON.parse(text);
 
   } catch (error) {
-    console.warn("⚠️ AI Offline/Error. Using Local Keyword Fallback.");
+    console.warn("⚠️ AI Offline. Using Local Fallback.");
     
-    // 2. Local Fallback Logic (Regex)
     const isEmergency = LOCAL_EMERGENCY_KEYWORDS.some(word => cleanQuery.includes(word));
-    
-    let tip = "";
-    if (cleanQuery.includes("earthquake")) tip = "Drop, Cover, and Hold On. Stay indoors.";
-    else if (cleanQuery.includes("fire")) tip = "Get out, stay out. Call Fire Department.";
-    else if (cleanQuery.includes("flood")) tip = "Move to higher ground. Avoid walking in water.";
-    else if (cleanQuery.includes("bleeding")) tip = "Apply direct pressure to wound immediately.";
-    else if (isEmergency) tip = "Stay calm. Locate nearest safe exit or authority.";
-
-    return {
-      isEmergency: isEmergency,
-      category: isEmergency ? "general_emergency" : "none",
-      survivalTip: tip,
-      reason: "Local Keyword Match"
-    };
+    let tip = isEmergency ? "Stay calm. Locate nearest safe exit." : "";
+    return { isEmergency, category: "general", survivalTip: tip };
   }
+};
+
+// --- NEW: VECTOR EMBEDDING GENERATOR ---
+export const generateEmbedding = async (text) => {
+    try {
+        const result = await embeddingModel.embedContent(text);
+        return result.embedding.values; // Returns array of floats
+    } catch (error) {
+        console.error("Embedding Error:", error.message);
+        return null; // Fail gracefully
+    }
 };

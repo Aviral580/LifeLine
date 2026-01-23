@@ -4,23 +4,37 @@ import queryPredictor from '../services/ngramService.js';
 
 export const logInteraction = async (req, res) => {
   try {
-    const { sessionId, actionType, targetUrl, isEmergencyMode, duration } = req.body;
+    const { sessionId, actionType, targetUrl, isEmergencyMode, duration, query } = req.body;
     
-    // Log the action
-    await AnalyticsLog.create({
-      sessionId,
+    // We map the incoming data to match the Schema's structure exactly
+    const logData = {
+      sessionId: sessionId || "session-unknown",
       actionType,
-      metadata: { clickedUrl: targetUrl },
-      isEmergencyMode,
-      duration
-    });
+      isEmergencyMode: !!isEmergencyMode,
+      query: query || null,
+      duration: duration || 0,
+      metadata: {
+        clickedUrl: targetUrl || null // Move targetUrl into metadata
+      }
+    };
 
-    console.log(`📊 Analytics: ${actionType} logged for session ${sessionId.substr(0,5)}`);
+    await AnalyticsLog.create(logData);
+
+    // Visual Terminal Confirmation
+    if (actionType === 'bounce_detected') {
+      console.log(`🛑 POGO-STICK CAUGHT: ${targetUrl} (Stayed: ${duration}ms)`);
+    } else {
+      console.log(`📊 Analytics: ${actionType} logged`);
+    }
+
     res.status(201).json({ success: true });
   } catch (error) {
+    console.error("❌ Log Interaction Error:", error.message);
     res.status(500).json({ message: error.message });
   }
 };
+
+// ... keep submitFeedback, getPredictions, and getDashboardMetrics as they are ...
 
 export const submitFeedback = async (req, res) => {
   try {

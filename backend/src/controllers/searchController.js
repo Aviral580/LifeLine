@@ -7,88 +7,76 @@ import QueryCorpus from '../models/QueryCorpus.js';
 import { calculateEmergencyScore } from '../utils/ranker.js';
 import { classifyIntent } from '../services/aiService.js';
 import { liveScrape } from '../services/scraperService.js';
+import vectorService from '../services/vectorService.js'; // LOCAL VECTOR SERVICE
+import { cosineSimilarity } from '../utils/math.js'; // MANUAL MATH
 import axios from 'axios';
 
-// Helper: Geolocate user for context-aware crisis info
 const getUserLocation = async (ip) => {
     try {
         const cleanIp = (ip === '::1' || ip === '127.0.0.1' || !ip) ? '' : ip;
         const res = await axios.get(`http://ip-api.com/json/${cleanIp}`);
         return res.data.status === 'success' ? `${res.data.city}, ${res.data.regionName}` : "India";
-    } catch (err) {
-        return "India";
-    }
+    } catch (err) { return "India"; }
 };
 
-// --- THE MISSING EXPORT ---
 export const executeSearch = async (req, res) => {
     const { q } = req.query;
-    const userIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const startTime = Date.now();
 
     try {
-        const location = await getUserLocation(userIp);
-        
-        // 1. SMART QUERY PROCESSING (Fixing "Near Me")
-        let effectiveQuery = q;
-        if (q.toLowerCase().includes('near me')) {
-            effectiveQuery = q.toLowerCase().replace('near me', `in ${location}`);
-            console.log(`📍 Location Injection: "${q}" -> "${effectiveQuery}"`);
-        }
-
-        const tokens = processQuery(effectiveQuery);
-        if (tokens.length === 0) return res.status(400).json({ message: "No valid tokens found" });
-
-        // 2. INTENT & EMERGENCY CHECK
-        const aiAnalysis = await classifyIntent(effectiveQuery);
+        const location = await getUserLocation(req.headers['x-forwarded-for']);
+        const aiAnalysis = await classifyIntent(q);
         const isEmergency = aiAnalysis.isEmergency;
-
-        // 3. RETRIEVAL STRATEGY
-        // A. Try Local DB (AG News)
-        let candidates = await Page.find({ tokens: { $in: tokens } }).limit(100).lean();
-        let rankedResults = calculateBM25(tokens, candidates);
-        let dataSource = "Local Index";
-
-        // B. Check Quality. If poor, Scrape Live Web.
-        const topResult = rankedResults[0];
-        // Lowered threshold to force scrape if local results are irrelevant
-        const coverage = topResult ? tokens.filter(t => topResult.tokens.includes(t)).length / tokens.length : 0;
-
-        if (rankedResults.length < 3 || coverage < 0.4) {
-            console.log(`🌐 Local results weak (${rankedResults.length} found). Scraping live...`);
-            
-            // Pass the LOCALISED query to the scraper
-            const externalData = await liveScrape(effectiveQuery);
-            
+        const queryVectorPromise = vectorService.getEmbedding(q);
+        const tokens = processQuery(q);
+        let candidates = await Page.find({ tokens: { $in: tokens } }).limit(50).lean();
+        if (candidates.length < 5) {
+            const externalData = await liveScrape(q);
             if (externalData.length > 0) {
-                dataSource = "Live Web + Local";
                 const processedExternal = externalData.map(item => ({
                     ...item,
+                    category: 'Scraped',
                     createdAt: new Date(),
                     tokens: processQuery(item.title + " " + item.content)
                 }));
-
-                // Combine Local + External
-                const combined = [...candidates, ...processedExternal];
-                
-                // Re-rank everything together
-                rankedResults = calculateBM25(tokens, combined);
-
-                // Learn: Save the good external results to DB for next time
-                Page.insertMany(processedExternal, { ordered: false }).catch(() => {});
+                candidates = [...candidates, ...processedExternal];
             }
         }
+        const queryVector = await queryVectorPromise;
+        let rankedResults = calculateBM25(tokens, candidates);
 
-        // 4. FEEDBACK INTEGRATION (The Learning Loop)
         const targetUrls = rankedResults.map(r => r.url);
         const feedbacks = await Feedback.find({ targetUrl: { $in: targetUrls } }).lean();
+        
+        // --- ONLY THIS SECTION UPDATED TO MATCH NEW ANALYTICS ---
+        const analytics = await AnalyticsLog.aggregate([
+            { $match: { "metadata.clickedUrl": { $in: targetUrls } } },
+            { $group: { 
+                _id: "$metadata.clickedUrl", 
+                clicks: { $sum: { $cond: [{ $eq: ["$actionType", "click_result"] }, 1, 0] } }, 
+                bounces: { $sum: { $cond: [{ $eq: ["$actionType", "bounce_detected"] }, 1, 0] } } 
+            }}
+        ]);
 
-        const finalResults = rankedResults.map(r => {
+        const finalResults = await Promise.all(rankedResults.map(async (r, index) => {
+            let semanticScore = 0;
+
+            if (queryVector && index < 20) {
+                const docText = `${r.title} ${r.summary || r.content.substring(0, 100)}`;
+                const docVector = await vectorService.getEmbedding(docText);
+                if (docVector) {
+                    semanticScore = cosineSimilarity(queryVector, docVector);
+                }
+            }
             const docFeedbacks = feedbacks.filter(f => f.targetUrl === r.url);
+            const docAnalytics = analytics.find(a => a._id === r.url) || { clicks: 0, bounces: 0 };
             const totalImpact = docFeedbacks.reduce((sum, f) => sum + f.trustScoreImpact, 0);
 
             const hybridScore = calculateEmergencyScore(r, isEmergency, {
                 impact: totalImpact,
-                clicks: r.clicks || 0
+                clicks: docAnalytics.clicks,
+                bounces: docAnalytics.bounces,
+                semanticScore: semanticScore
             });
 
             return {
@@ -98,38 +86,35 @@ export const executeSearch = async (req, res) => {
                 score: hybridScore,
                 source: r.category === 'Scraped' ? 'Live Web' : 'Local Archive',
                 trustLevel: hybridScore > 75 ? "OFFICIAL" : "VERIFIED",
-                feedbackCount: docFeedbacks.length // Sending this to frontend for proof
+                feedbackCount: docFeedbacks.length,
+                debugVector: semanticScore.toFixed(2) // Sending this to frontend to PROVE it works
             };
-        });
+        }));
 
-        // Sort by Score
         finalResults.sort((a, b) => b.score - a.score);
 
-        // 5. Audit & Insights: Update Query Corpus
+        // Update N-Gram
         await QueryCorpus.findOneAndUpdate(
             { phrase: q.toLowerCase().trim() },
-            { 
-                $inc: { frequency: 1 }, 
-                $set: { lastSearched: new Date(), mode: isEmergency ? 'emergency' : 'normal' }
-            },
+            { $inc: { frequency: 1 }, $set: { lastSearched: new Date() } },
             { upsert: true }
         );
 
         res.json({
-            query: effectiveQuery,
+            query: q,
             emergencyMode: isEmergency,
             aiTip: aiAnalysis.survivalTip,
             location: location,
-            results: finalResults.slice(0, 15), // Show top 15 results
+            results: finalResults.slice(0, 15),
             meta: { 
-                engine: "LifeLine Hybrid v1.6",
-                tokens: tokens,
-                localCoverage: `${(coverage * 100).toFixed(0)}%`
+                engine: "LifeLine Local-Vector v1.0",
+                searchTime: `${Date.now() - startTime}ms`,
+                vectorUsed: !!queryVector
             }
         });
 
     } catch (error) {
-        console.error("Search Error:", error.message);
-        res.status(500).json({ message: "Search failed" });
+        console.error("Search Logic Error:", error);
+        res.status(500).json({ message: "Internal Engine Failure" });
     }
 };

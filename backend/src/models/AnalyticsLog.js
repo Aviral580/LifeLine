@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
+
 const analyticsLogSchema = new mongoose.Schema({
   actionType: {
     type: String,
-    enum: ['search', 'click_result', 'view_page', 'mode_toggle'],
+    // ADDED 'bounce_detected' here to stop the 500 error
+    enum: ['search', 'click_result', 'view_page', 'mode_toggle', 'bounce_detected'],
     required: true
   },
   query: {
@@ -19,6 +21,11 @@ const analyticsLogSchema = new mongoose.Schema({
     required: true,
     index: true 
   },
+  // ADDED this so the DB can store the pogo-sticking time
+  duration: {
+    type: Number,
+    default: 0
+  },
   timestamp: {
     type: Date,
     default: Date.now
@@ -29,5 +36,6 @@ const analyticsLogSchema = new mongoose.Schema({
     clickedUrl: String  
   }
 });
+
 const AnalyticsLog = mongoose.model('AnalyticsLog', analyticsLogSchema);
 export default AnalyticsLog;

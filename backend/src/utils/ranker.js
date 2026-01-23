@@ -1,12 +1,13 @@
 import { verifySourceAuthority } from './trustValidator.js';
 
 export const calculateEmergencyScore = (result, isEmergency = false, userSignals = {}) => {
+    // 1. BASE RELEVANCE
     const relevance = Math.min((parseFloat(result.relevanceScore) || 0) / 40, 1.0);
     const authority = verifySourceAuthority(result.url) / 100;
 
-    // --- FRESHNESS LOGIC UPGRADE ---
+    // 2. FRESHNESS (Existing logic preserved)
     const pubDateRaw = result.publishedAt || result.createdAt || "";
-    let hoursOld = 175200; // Default to ~20 years old (2004 data)
+    let hoursOld = 175200; 
     
     if (pubDateRaw) {
         const docDate = new Date(pubDateRaw);
@@ -15,29 +16,49 @@ export const calculateEmergencyScore = (result, isEmergency = false, userSignals
         }
     }
 
-    // Heavy penalty for the 2004 AG News data
     let freshness = 0.05; 
-    if (hoursOld <= 24) freshness = 1.0;       // Last 24 hours
-    else if (hoursOld <= 168) freshness = 0.7; // Last week
-    else if (hoursOld <= 720) freshness = 0.4; // Last month
-    else if (hoursOld > 8760) freshness = -0.5; // Older than a year? Penalty.
+    if (hoursOld <= 24) freshness = 1.0;       
+    else if (hoursOld <= 168) freshness = 0.7; 
+    else if (hoursOld <= 720) freshness = 0.4; 
+    else if (hoursOld > 8760) freshness = -0.5; 
 
-    // --- USER BEHAVIOR ---
+    // --- BEHAVIORAL & SEMANTIC LOGIC ---
+    const clicks = userSignals.clicks || 0;
+    const bounces = userSignals.bounces || 0;
+    const totalInteractions = clicks + bounces;
+    const bounceRate = totalInteractions > 0 ? (bounces / totalInteractions) : 0;
+
     const feedbackImpact = userSignals.impact || 0;
-    const clickCount = userSignals.clicks || 0;
-    const behaviorScore = (clickCount * 0.05) + (feedbackImpact * 0.2);
+    const feedbackScore = feedbackImpact * 2.0; 
 
-    // --- SOURCE WEIGHTING ---
-    // If it's from the scraper (Live Web), give it a "Freshness" floor boost
+    // NEW: Semantic (Vector) Score - Passed from searchController
+    const semanticScore = userSignals.semanticScore || 0;
+
+    // Source Boost
     const sourceBoost = result.source === 'Live Web' ? 0.2 : 0;
 
     let finalScore;
     if (isEmergency) {
-        finalScore = (authority * 0.35) + (freshness * 0.35) + (behaviorScore * 0.20) + (relevance * 0.10);
+        // Emergency: Prioritize Authority, Freshness, and Semantic accuracy.
+        finalScore = 
+            (authority * 0.30) + 
+            (freshness * 0.30) + 
+            (semanticScore * 0.20) + // AI accuracy factor
+            (relevance * 0.10) + 
+            (feedbackScore / 100) - 
+            (bounceRate * 0.25);
     } else {
-        // NORMAL MODE: Prioritize relevance BUT heavily weight freshness to avoid 2004 data
-        finalScore = (relevance * 0.30) + (freshness * 0.40) + (authority * 0.15) + (behaviorScore * 0.15) + sourceBoost;
+        // Normal: Relevance + Semantic + Freshness
+        finalScore = 
+            (relevance * 0.25) + 
+            (semanticScore * 0.25) + // AI accuracy factor
+            (freshness * 0.30) + 
+            (authority * 0.10) + 
+            (feedbackScore / 100) - 
+            (bounceRate * 0.15) + 
+            sourceBoost;
     }
 
-    return parseFloat((Math.max(0, finalScore) * 100).toFixed(2));
+    // Clamp between 0 and 100
+    return parseFloat((Math.max(0, Math.min(100, finalScore * 100))).toFixed(2));
 };
