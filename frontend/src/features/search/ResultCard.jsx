@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CheckCircle2, AlertOctagon, ThumbsUp, ThumbsDown, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle2, AlertOctagon, ThumbsUp, ThumbsDown, ExternalLink, Activity } from 'lucide-react';
 import { useMode } from '../../context/ModeContext';
 import { cn } from '../../utils/cn';
 import { motion } from 'framer-motion';
@@ -7,34 +7,41 @@ import API from '../../utils/api';
 
 const ResultCard = ({ title, source, trustScore, summary, url }) => {
   const { isEmergency } = useMode();
-  const [feedbackSent, setFeedbackSent] = useState(null);
-  const isTrusted = trustScore > 75;
+  
+  // Use a cleaner key for localStorage (removing protocol/slashes)
+  const storageKey = `life_vote_${url.replace(/[^a-zA-Z0-9]/g, '')}`;
+  
+  const [userAction, setUserAction] = useState(null);
 
-  // Track behavior: Clicks boost the document in the ranking loop
+  // Sync with storage whenever the URL changes
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    setUserAction(saved);
+  }, [url, storageKey]);
+
   const handleLinkClick = async () => {
     try {
       await API.post('/analytics/log', {
         actionType: 'click_result',
         targetUrl: url,
-        sessionId: 'session-' + Math.random().toString(36).substr(2, 9),
+        sessionId: 'session-demo',
         isEmergencyMode: isEmergency
       });
       window.open(url, '_blank');
-    } catch (err) {
-      window.open(url, '_blank');
-    }
+    } catch (err) { window.open(url, '_blank'); }
   };
 
-  // Human-in-the-loop: Upvote or Downvote for self-learning
   const handleFeedback = async (type) => {
-    if (feedbackSent) return;
+    if (userAction) return; 
+    
     try {
       await API.post('/feedback', {
         targetUrl: url,
-        feedbackType: type === 'helpful' ? 'upvote' : 'fake_news_report',
-        userComment: `User flagged as ${type}`
+        feedbackType: type === 'helpful' ? 'upvote' : 'fake_news_report'
       });
-      setFeedbackSent(type);
+      
+      setUserAction(type);
+      localStorage.setItem(storageKey, type);
     } catch (err) {
       console.error("Feedback failed", err);
     }
@@ -42,84 +49,69 @@ const ResultCard = ({ title, source, trustScore, summary, url }) => {
 
   return (
     <motion.div 
-      initial={{ opacity: 0, y: 15 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "p-6 rounded-2xl border transition-all duration-300 group relative",
-        isEmergency 
-          ? "bg-slate-900 border-red-900/30 hover:border-red-500/50" 
-          : "bg-white border-slate-200 hover:border-blue-400 hover:shadow-xl"
+        "p-6 rounded-2xl border transition-all duration-300",
+        isEmergency ? "bg-slate-900 border-red-900/30" : "bg-white border-slate-200"
       )}
     >
       <div className="flex justify-between items-start mb-4">
-        <div className="flex items-center gap-2">
-          {isTrusted ? (
-            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-              <CheckCircle2 className="w-3 h-3" /> Credible Source
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20">
-              <AlertOctagon className="w-3 h-3" /> Mixed Credibility
-            </span>
-          )}
-          <span className={cn("text-xs font-medium", isEmergency ? "text-red-300/60" : "text-slate-400")}>
-            {source}
-          </span>
+        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest opacity-60">
+           <Activity size={14} /> {source}
         </div>
         <div className="flex flex-col items-end">
-          <div className={cn("text-2xl font-black tabular-nums", isTrusted ? "text-emerald-500" : "text-amber-500")}>
+          <div className={cn("text-2xl font-black tabular-nums", trustScore > 60 ? "text-emerald-500" : "text-amber-500")}>
             {trustScore}
           </div>
-          <span className="text-[8px] uppercase tracking-tighter opacity-50">Trust Index</span>
+          <span className="text-[8px] uppercase opacity-50">Trust Score</span>
         </div>
       </div>
 
-      <button 
-        onClick={handleLinkClick}
-        className={cn(
-          "text-left text-xl font-bold mb-3 flex items-start gap-2 group-hover:underline decoration-2 block",
-          isEmergency ? "text-red-50 decoration-red-500" : "text-slate-900 decoration-blue-600"
-        )}
-      >
-        {title}
-        <ExternalLink size={16} className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+      <button onClick={handleLinkClick} className="text-left w-full group mb-3">
+        <h3 className={cn(
+          "text-xl font-bold flex items-center gap-2",
+          isEmergency ? "text-white group-hover:text-red-500" : "text-slate-900 group-hover:text-blue-600"
+        )}>
+          {title} <ExternalLink size={14} className="opacity-40" />
+        </h3>
       </button>
 
-      <p className={cn("text-sm leading-relaxed mb-6 line-clamp-3", isEmergency ? "text-slate-400" : "text-slate-600")}>
-        {summary}
-      </p>
+      <p className="text-sm opacity-70 mb-6 line-clamp-2">{summary}</p>
 
-      {/* FEEDBACK LOOP UI */}
       <div className="flex items-center justify-between pt-4 border-t border-slate-100/10">
-        <div className="flex gap-3">
+        <div className="flex gap-4">
+          
+          {/* HELPFUL BUTTON */}
           <button 
-            disabled={feedbackSent}
             onClick={() => handleFeedback('helpful')}
             className={cn(
-              "flex items-center gap-2 text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg transition-all",
-              feedbackSent === 'helpful' 
-                ? "bg-emerald-500 text-white" 
-                : "bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 dark:bg-slate-800"
+              "flex items-center gap-2 text-[10px] font-bold uppercase px-4 py-2 rounded-lg transition-all border shadow-sm",
+              userAction === 'helpful' 
+                ? "bg-emerald-600 text-white border-emerald-600 !opacity-100 shadow-emerald-500/20" 
+                : (userAction ? "opacity-20 cursor-not-allowed" : "hover:bg-emerald-50 hover:text-emerald-600 border-slate-200 text-slate-400")
             )}
           >
-            <ThumbsUp className="w-3 h-3" /> {feedbackSent === 'helpful' ? "Thank You" : "Helpful"}
+            <ThumbsUp size={14} /> {userAction === 'helpful' ? "Learned" : "Helpful"}
           </button>
           
+          {/* FAKE NEWS BUTTON */}
           <button 
-            disabled={feedbackSent}
             onClick={() => handleFeedback('fake')}
             className={cn(
-              "flex items-center gap-2 text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg transition-all",
-              feedbackSent === 'fake' 
-                ? "bg-red-500 text-white" 
-                : "bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-600 dark:bg-slate-800"
+              "flex items-center gap-2 text-[10px] font-bold uppercase px-4 py-2 rounded-lg transition-all border shadow-sm",
+              userAction === 'fake' 
+                ? "bg-red-600 text-white border-red-600 !opacity-100 shadow-red-500/20" 
+                : (userAction ? "opacity-20 cursor-not-allowed" : "hover:bg-red-50 hover:text-red-600 border-slate-200 text-slate-400")
             )}
           >
-            <ThumbsDown className="w-3 h-3" /> {feedbackSent === 'fake' ? "Reported" : "Fake News"}
+            <ThumbsDown size={14} /> {userAction === 'fake' ? "Reported" : "Fake News"}
           </button>
         </div>
-        
-        <span className="text-[9px] text-slate-400 italic">ID: {Math.random().toString(36).substr(2, 5)}</span>
+
+        {userAction && (
+          <span className="text-[10px] font-bold text-slate-500 animate-pulse uppercase">Database Updated</span>
+        )}
       </div>
     </motion.div>
   );

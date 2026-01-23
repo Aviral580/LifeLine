@@ -1,38 +1,43 @@
 import { verifySourceAuthority } from './trustValidator.js';
 
-export const calculateEmergencyScore = (result, isEmergency = false) => {
-    // Relevance normalized (0-1)
+export const calculateEmergencyScore = (result, isEmergency = false, userSignals = {}) => {
     const relevance = Math.min((parseFloat(result.relevanceScore) || 0) / 40, 1.0);
-    
-    // Authority (PageRank Proxy)
     const authority = verifySourceAuthority(result.url) / 100;
 
-    // Freshness Logic
-    const pubDateRaw = result.publishedAt || "";
-    let hoursOld = 48;
-
-    if (typeof pubDateRaw === 'string') {
-        if (pubDateRaw.includes('hour')) hoursOld = parseInt(pubDateRaw) || 1;
-        else if (pubDateRaw.includes('minute')) hoursOld = 0.5;
-        else if (pubDateRaw.includes('day')) hoursOld = (parseInt(pubDateRaw) || 1) * 24;
-        else {
-            const pubDate = new Date(pubDateRaw);
-            if (!isNaN(pubDate)) hoursOld = (new Date() - pubDate) / (1000 * 60 * 60);
+    // --- FRESHNESS LOGIC UPGRADE ---
+    const pubDateRaw = result.publishedAt || result.createdAt || "";
+    let hoursOld = 175200; // Default to ~20 years old (2004 data)
+    
+    if (pubDateRaw) {
+        const docDate = new Date(pubDateRaw);
+        if (!isNaN(docDate)) {
+            hoursOld = (new Date() - docDate) / (1000 * 60 * 60);
         }
     }
 
-    let freshness = (hoursOld <= 1) ? 1.0 : (hoursOld <= 6) ? 0.8 : (hoursOld <= 24) ? 0.5 : 0.1;
+    // Heavy penalty for the 2004 AG News data
+    let freshness = 0.05; 
+    if (hoursOld <= 24) freshness = 1.0;       // Last 24 hours
+    else if (hoursOld <= 168) freshness = 0.7; // Last week
+    else if (hoursOld <= 720) freshness = 0.4; // Last month
+    else if (hoursOld > 8760) freshness = -0.5; // Older than a year? Penalty.
 
-    // Consensus (The crossSourceAgreement from teammates)
-    const agreement = result.crossSourceAgreement || 0.5;
+    // --- USER BEHAVIOR ---
+    const feedbackImpact = userSignals.impact || 0;
+    const clickCount = userSignals.clicks || 0;
+    const behaviorScore = (clickCount * 0.05) + (feedbackImpact * 0.2);
 
-    // Final Weighted Score (IR Model)
+    // --- SOURCE WEIGHTING ---
+    // If it's from the scraper (Live Web), give it a "Freshness" floor boost
+    const sourceBoost = result.source === 'Live Web' ? 0.2 : 0;
+
     let finalScore;
     if (isEmergency) {
-        finalScore = (relevance * 0.25) + (authority * 0.35) + (freshness * 0.30) + (agreement * 0.10);
+        finalScore = (authority * 0.35) + (freshness * 0.35) + (behaviorScore * 0.20) + (relevance * 0.10);
     } else {
-        finalScore = (relevance * 0.60) + (authority * 0.30) + (freshness * 0.10);
+        // NORMAL MODE: Prioritize relevance BUT heavily weight freshness to avoid 2004 data
+        finalScore = (relevance * 0.30) + (freshness * 0.40) + (authority * 0.15) + (behaviorScore * 0.15) + sourceBoost;
     }
 
-    return parseFloat((finalScore * 100).toFixed(2));
+    return parseFloat((Math.max(0, finalScore) * 100).toFixed(2));
 };

@@ -3,13 +3,14 @@ import Navbar from '../components/layout/Navbar';
 import SearchInterface from '../features/search/SearchInterface';
 import AnalyticsDashboard from '../features/analytics/AnalyticsDashboard';
 import ResultCard from '../features/search/ResultCard';
-import { useMode } from '../context/ModeContext';
+import { useMode } from '../context/ModeContext'; // Import context
 import { cn } from '../utils/cn';
 import API from '../utils/api'; 
 import { Loader2, Info } from 'lucide-react';
 
 const Home = () => {
-  const { isEmergency } = useMode();
+  // Destructure setEmergencyMode from context
+  const { isEmergency, setEmergencyMode } = useMode(); 
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [aiTip, setAiTip] = useState("");
@@ -28,6 +29,15 @@ const Home = () => {
         setResults(searchRes.data.results || []);
         setAiTip(searchRes.data.aiTip || "");
         setMeta(searchRes.data.meta || null);
+
+        // --- CRITICAL FIX: Auto-Switch to Emergency Mode ---
+        // If the backend says it's an emergency, force the UI to black/red
+        if (searchRes.data.emergencyMode === true) {
+            setEmergencyMode(true);
+        } else {
+            // Optional: If you want it to switch back to normal automatically
+            // setEmergencyMode(false); 
+        }
       }
 
       API.post('/search/log', {
@@ -46,7 +56,7 @@ const Home = () => {
 
   return (
     <div className={cn(
-      "min-h-screen transition-colors duration-500", 
+      "min-h-screen transition-colors duration-1000", // Increased duration for dramatic effect
       isEmergency ? "bg-[#0a0a0a]" : "bg-slate-50"
     )}>
       <Navbar />
@@ -58,28 +68,29 @@ const Home = () => {
             
             <div className="text-center mb-12">
               <h1 className={cn(
-                "text-4xl md:text-6xl font-black mb-4 tracking-tighter transition-all", 
-                isEmergency ? "text-white" : "text-slate-900"
+                "text-4xl md:text-6xl font-black mb-4 tracking-tighter transition-all duration-700", 
+                isEmergency ? "text-white scale-105" : "text-slate-900"
               )}>
                 {isEmergency ? "CRITICAL INFORMATION" : "LifeLine"}
               </h1>
-              <p className={cn("text-lg italic font-medium", isEmergency ? "text-red-200" : "text-slate-500")}>
+              <p className={cn("text-lg italic font-medium transition-colors duration-500", isEmergency ? "text-red-200" : "text-slate-500")}>
                 {isEmergency 
-                  ? "Verified safety protocols and real-time emergency resources." 
+                  ? "Emergency Mode Active: Prioritizing verified safety protocols." 
                   : "The search engine that actually graduated from journalism school."}
               </p>
             </div>
 
             <SearchInterface onSearch={handleSearch} />
 
-            {aiTip && (
-              <div className="p-4 bg-red-600/10 border border-red-600/20 rounded-2xl flex items-start gap-4 animate-in slide-in-from-top-4">
-                <div className="p-2 bg-red-600 rounded-lg text-white">
-                  <Info size={20} />
+            {/* Emergency Alert Banner */}
+            {aiTip && isEmergency && (
+              <div className="p-6 bg-red-900/20 border border-red-600 rounded-2xl flex items-start gap-4 animate-in slide-in-from-top-4 shadow-[0_0_30px_rgba(220,38,38,0.2)]">
+                <div className="p-3 bg-red-600 rounded-lg text-white shadow-lg animate-pulse">
+                  <Info size={24} />
                 </div>
                 <div>
-                  <h4 className="text-red-500 font-bold text-sm uppercase tracking-widest">AI Survival Tip</h4>
-                  <p className={cn("text-lg font-medium", isEmergency ? "text-red-50" : "text-slate-800")}>{aiTip}</p>
+                  <h4 className="text-red-500 font-bold text-sm uppercase tracking-widest mb-1">AI Survival Protocol</h4>
+                  <p className="text-xl font-bold text-white leading-tight">{aiTip}</p>
                 </div>
               </div>
             )}
@@ -104,7 +115,7 @@ const Home = () => {
               ) : (
                 <div className="py-20 text-center opacity-40">
                   <p className="text-xl italic">
-                    {meta ? "No results met our editorial standards." : "LifeLine: Trust-First Search."}
+                    {meta ? "No high-confidence results found." : "LifeLine: Trust-First Search."}
                   </p>
                 </div>
               )}
@@ -112,7 +123,6 @@ const Home = () => {
               {meta && (
                 <div className="pt-10 border-t border-slate-200 text-[10px] text-slate-400 uppercase tracking-[0.2em] flex justify-between">
                   <span>Core: {meta.engine}</span>
-                  <span>Lexicon: {meta.tokens?.join(', ')}</span>
                   {meta.localCoverage && <span>Coverage: {meta.localCoverage}</span>}
                 </div>
               )}
