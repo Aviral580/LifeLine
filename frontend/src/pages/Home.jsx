@@ -1,50 +1,80 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '../components/layout/Navbar';
 import SearchInterface from '../features/search/SearchInterface';
 import AnalyticsDashboard from '../features/analytics/AnalyticsDashboard';
 import ResultCard from '../features/search/ResultCard';
-import { useMode } from '../context/ModeContext'; // Import context
+import { useMode } from '../context/ModeContext'; 
 import { cn } from '../utils/cn';
 import API from '../utils/api'; 
 import { Loader2, Info } from 'lucide-react';
 
 const Home = () => {
-  // Destructure setEmergencyMode from context
   const { isEmergency, setEmergencyMode } = useMode(); 
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [aiTip, setAiTip] = useState("");
   const [meta, setMeta] = useState(null);
 
+  // --- IMPROVED POGO-STICKING DETECTOR ---
+  useEffect(() => {
+    const checkBounce = async () => {
+        const lastClickTime = localStorage.getItem('last_click_ts');
+        const lastClickUrl = localStorage.getItem('last_click_url');
+
+        if (lastClickTime && lastClickUrl) {
+            const now = Date.now();
+            const duration = now - parseInt(lastClickTime);
+            
+            console.log(`🕒 User returned. Time away: ${duration}ms`);
+
+            if (duration < 10000) {
+                console.log(`⚠️ BOUNCE DETECTED! (${duration}ms)`);
+                
+                await API.post('/analytics/log', {
+                    actionType: 'bounce_detected', 
+                    targetUrl: lastClickUrl,
+                    sessionId: sessionStorage.getItem('lifeline_sid') || 'session-temp',
+                    duration: duration,
+                    isEmergencyMode: isEmergency
+                }).catch(err => console.error("Bounce log failed", err));
+            }
+
+            localStorage.removeItem('last_click_ts');
+            localStorage.removeItem('last_click_url');
+        }
+    };
+
+    window.addEventListener('focus', checkBounce);
+    return () => window.removeEventListener('focus', checkBounce);
+  }, [isEmergency]);
+
   const handleSearch = async (query) => {
     if (!query) return;
     
     setLoading(true);
-    const sessionId = 'session-' + Math.random().toString(36).substr(2, 9);
+    let sessionId = sessionStorage.getItem('lifeline_sid');
+    if (!sessionId) {
+        sessionId = 'session-' + Math.random().toString(36).substr(2, 9);
+        sessionStorage.setItem('lifeline_sid', sessionId);
+    }
 
     try {
-      const searchRes = await API.get(`/search/execute?q=${encodeURIComponent(query)}`);
+      // The backend 'execute' controller now handles logging automatically
+      // We pass the sid (session ID) as a query param so the backend can log it correctly
+      const searchRes = await API.get(`/search/execute?q=${encodeURIComponent(query)}&sid=${sessionId}`);
       
       if (searchRes.data) {
         setResults(searchRes.data.results || []);
         setAiTip(searchRes.data.aiTip || "");
         setMeta(searchRes.data.meta || null);
 
-        // --- CRITICAL FIX: Auto-Switch to Emergency Mode ---
-        // If the backend says it's an emergency, force the UI to black/red
         if (searchRes.data.emergencyMode === true) {
             setEmergencyMode(true);
-        } else {
-            // Optional: If you want it to switch back to normal automatically
-            // setEmergencyMode(false); 
         }
       }
 
-      API.post('/search/log', {
-        query: query,
-        sessionId: sessionId,
-        isEmergencyMode: isEmergency
-      }).catch(err => console.error("Logging failed", err));
+      // REMOVED THE MANUAL API.POST('/analytics/log') CALL FROM HERE 
+      // TO PREVENT DOUBLE COUNTING
 
     } catch (error) {
       console.error("Search Execution Error:", error);
@@ -56,16 +86,14 @@ const Home = () => {
 
   return (
     <div className={cn(
-      "min-h-screen transition-colors duration-1000", // Increased duration for dramatic effect
+      "min-h-screen transition-colors duration-1000", 
       isEmergency ? "bg-[#0a0a0a]" : "bg-slate-50"
     )}>
       <Navbar />
       
       <main className="container mx-auto px-4 pt-32 pb-20">
         <div className="grid lg:grid-cols-12 gap-8">
-          
           <div className="lg:col-span-8 space-y-8">
-            
             <div className="text-center mb-12">
               <h1 className={cn(
                 "text-4xl md:text-6xl font-black mb-4 tracking-tighter transition-all duration-700", 
@@ -82,7 +110,6 @@ const Home = () => {
 
             <SearchInterface onSearch={handleSearch} />
 
-            {/* Emergency Alert Banner */}
             {aiTip && isEmergency && (
               <div className="p-6 bg-red-900/20 border border-red-600 rounded-2xl flex items-start gap-4 animate-in slide-in-from-top-4 shadow-[0_0_30px_rgba(220,38,38,0.2)]">
                 <div className="p-3 bg-red-600 rounded-lg text-white shadow-lg animate-pulse">
@@ -132,7 +159,6 @@ const Home = () => {
           <div className="lg:col-span-4 space-y-6">
             <AnalyticsDashboard />
           </div>
-
         </div>
       </main>
     </div>
