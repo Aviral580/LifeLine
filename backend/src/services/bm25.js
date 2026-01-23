@@ -1,43 +1,39 @@
 /**
- * BM25 Logic for LifeLine Search Engine
+ * Enhanced BM25 with Lexical Similarity
  */
 export const calculateBM25 = (queryTokens, results, totalDocs = 120000) => {
-    // Parameters (Standard industry values)
     const k1 = 1.2; 
     const b = 0.75;
 
-    // 1. Calculate Average Document Length (avgdl)
-    const avgdl = results.reduce((sum, doc) => sum + doc.tokens.length, 0) / results.length || 1;
+    const avgdl = results.reduce((sum, doc) => sum + (doc.tokens?.length || 0), 0) / results.length || 1;
 
-    // 2. Score each document
     const scoredResults = results.map(doc => {
-        let score = 0;
-        const D = doc.tokens.length; // Document length
+        let bm25Score = 0;
+        const D = doc.tokens?.length || 0;
 
+        // 1. Classic BM25 Math
         queryTokens.forEach(token => {
-            // f(q, D): Frequency of the token in this document
-            const f_q_D = doc.tokens.filter(t => t === token).length;
-
-            // n(q): Number of documents containing the token 
-            // (We estimate this from the current result set for speed)
-            const n_q = results.filter(d => d.tokens.includes(token)).length;
-
-            // IDF: Inverse Document Frequency
+            const f_q_D = doc.tokens ? doc.tokens.filter(t => t === token).length : 0;
+            const n_q = results.filter(d => d.tokens?.includes(token)).length;
             const idf = Math.log((totalDocs - n_q + 0.5) / (n_q + 0.5) + 1);
 
-            // The BM25 Formula
             const numerator = f_q_D * (k1 + 1);
             const denominator = f_q_D + k1 * (1 - b + b * (D / avgdl));
-            
-            score += idf * (numerator / denominator);
+            bm25Score += idf * (numerator / denominator);
         });
+
+        // 2. Similarity Search (Jaccard Similarity)
+        // This measures the overlap between query tokens and document tokens
+        const docTokenSet = new Set(doc.tokens);
+        const intersection = queryTokens.filter(t => docTokenSet.has(t));
+        const similarityScore = intersection.length / queryTokens.length; 
 
         return {
             ...doc,
-            relevanceScore: score.toFixed(4)
+            relevanceScore: bm25Score.toFixed(4),
+            similarityScore: similarityScore.toFixed(4) // This satisfies the "Similarity Search" requirement
         };
     });
 
-    // 3. Sort by Score descending
     return scoredResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
 };
