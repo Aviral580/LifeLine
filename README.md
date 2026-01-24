@@ -106,9 +106,6 @@ This ensures **fast, relevant, and adaptive suggestions** even under emergency c
 
 ---
 
-## 👥 Contributors (Till Now)
-
-- **Abhay Agrahari** – Full Stack Development & NLP Architecture
 
 ---
 
